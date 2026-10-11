@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 from .. import __version__, protocol
 from ..protocol import MsgType
-from ..transport import DiscoveryResponder, Link, SerialLink, TcpServer
+from ..transport import DiscoveryResponder, Link, SerialLink, SerialMuxReader, TcpServer
 from .config_schema import ToolSchema, safe_filename
 from .result_store import ResultStore
 
@@ -51,6 +51,12 @@ class Device:
         return self.link.peer
 
     @property
+    def passive(self) -> bool:
+        """只读设备：接在控制台串口上、没有握手 (或握手声明 passive) 的 stub，例如 bootloader 里的 memtest。
+        PC 不向它回发任何数据 —— 往 bootloader 控制台写字节可能打断自动启动或被当成命令。"""
+        return self.link.console_text and (not self.greeted or bool(self.info.get("passive")))
+
+    @property
     def display_id(self) -> str:
         return self.device_id or f"(未握手 {self.peer})"
 
@@ -79,6 +85,7 @@ class Hub:
         self.heartbeat_timeout_s = 30
         self._watchdog_stop = threading.Event()
         self._watchdog: threading.Thread | None = None
+        self._mux_readers: list[SerialMuxReader] = []
 
     # ------------------------------------------------------------------ 监听
     def add_listener(self, fn: Listener) -> None:
@@ -142,9 +149,20 @@ class Hub:
         self._start_watchdog()
         return link
 
+    def open_serial_mux(self, port: str, baudrate: int = 115200) -> SerialMuxReader:
+        """打开 SerialMux 汇聚口，每个源端口在收到第一帧时作为一台设备出现。"""
+        reader = SerialMuxReader(self, port, baudrate)
+        reader.start()
+        self._mux_readers.append(reader)
+        self.info(f"已打开汇聚串口 {port}")
+        return reader
+
     def shutdown(self) -> None:
         self._watchdog_stop.set()
         self.stop_server()
+        for r in self._mux_readers:
+            r.close()
+        self._mux_readers.clear()
         for d in self.devices():
             d.link.close()
 
@@ -162,7 +180,7 @@ class Hub:
                 continue
             now = time.time()
             for d in self.devices():
-                if now - d.last_seen > timeout:
+                if d.link.idle_timeout and now - d.last_seen > timeout:
                     self.error(f"{d.display_id} 超过 {timeout}s 无数据，断开连接")
                     d.link.close()
             # 清理太久没有回应的请求
@@ -221,6 +239,8 @@ class Hub:
 
     # ------------------------------------------------------------------ 消息处理
     def _reply(self, dev: Device, msg: dict) -> None:
+        if dev.passive:
+            return
         try:
             dev.link.send(msg)
         except Exception as e:
@@ -311,6 +331,8 @@ class Hub:
         dev = self.device(key)
         if dev is None:
             raise KeyError(f"设备 {key} 不存在")
+        if dev.passive:
+            raise ValueError(f"{dev.display_id} 是只读的串口 stub，不能下发参数或命令")
         with self._lock:
             self._pending[msg["id"]] = {"type": msg["type"], "desc": desc, "sent_at": time.time(), **info}
         try:

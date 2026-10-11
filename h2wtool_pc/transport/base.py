@@ -22,6 +22,10 @@ class Link:
     """一个双向消息链路。子类实现 _write_bytes / _close_impl，并在读线程里调用 _feed。"""
 
     transport = "unknown"
+    # 串口类链路可能直接接在 bootloader 的控制台上：非协议行转成 console 日志而不是协议错误，
+    # 并且不做心跳超时 (bootloader 跑测试时可能几分钟不输出)
+    console_text = False
+    idle_timeout = True
 
     def __init__(self, handler: LinkHandler, peer: str):
         self.link_id = f"L{next(_link_counter)}"
@@ -58,11 +62,18 @@ class Link:
             self.handler.on_link_error(self, str(e))
             return
         for line in lines:
-            try:
-                msg = protocol.decode_line(line)
-            except protocol.ProtocolError as e:
-                self.handler.on_link_error(self, f"{e}: {line[:200]!r}")
+            tagged = protocol.split_tagged(line)
+            if tagged is None and self.console_text and not line.lstrip().startswith(b"{"):
+                self.handler.on_link_message(self, protocol.console_log_message(line))
                 continue
+            try:
+                msg = protocol.decode_line(line if tagged is None else tagged)
+            except protocol.ProtocolError as e:
+                if self.console_text and tagged is None:
+                    msg = protocol.console_log_message(line)
+                else:
+                    self.handler.on_link_error(self, f"{e}: {line[:200]!r}")
+                    continue
             self.handler.on_link_message(self, msg)
 
     def _write_bytes(self, data: bytes) -> None:

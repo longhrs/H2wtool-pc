@@ -25,6 +25,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=None, help="TCP 端口 (默认取设置)")
     p.add_argument("--no-adb", action="store_true", help="无界面模式下不自动执行 adb reverse")
     p.add_argument("--serial", action="append", default=[], help="无界面模式下打开串口，可多次指定")
+    p.add_argument("--serial-mux", action="append", default=[],
+                   help="打开 SerialMux 汇聚串口 (每个源端口作为一台设备)，可多次指定")
     p.add_argument("-v", "--verbose", action="store_true")
     return p
 
@@ -66,6 +68,11 @@ def run_headless(args, data_dir: Path, settings: Settings) -> int:
             hub.open_serial(port, settings.serial_baudrate)
         except Exception as e:
             print(f"[error] 打开串口 {port} 失败: {e}", flush=True)
+    for port in args.serial_mux:
+        try:
+            hub.open_serial_mux(port, settings.serial_baudrate)
+        except Exception as e:
+            print(f"[error] 打开汇聚串口 {port} 失败: {e}", flush=True)
 
     auto = None
     if settings.adb_auto_reverse and not args.no_adb:
