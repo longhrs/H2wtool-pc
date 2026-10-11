@@ -8,7 +8,8 @@ memtest、H2wFlashTool 的测试结果，并可以在 PC 上设置这两个工�
 - **多种连接方式，同时生效**
   - 网络：TCP 服务 (默认端口 9527)，支持 UDP 广播自动发现 PC (端口 9528)
   - USB (adb)：自动检测 USB 连接的手机并执行 `adb reverse`，手机连 `127.0.0.1:9527` 即可
-  - USB 串口：CDC-ACM / gadget serial / USB 转串口
+  - USB 串口：CDC-ACM / gadget serial / USB 转串口；也可直接接 bootloader 控制台 (如 LK 里的 DDR memtest，只读)
+  - SerialMux 汇聚口：一个串口收多块板子的 UART，按源端口拆成多台设备
   - 支持多台设备同时连接
 - **测试结果**
   - 实时接收，保存到本地 SQLite 数据库；同一测试重复上报自动去重 (设备可放心重发)

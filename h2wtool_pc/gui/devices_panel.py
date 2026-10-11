@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 
 from ..core.hub import Device, Hub
 
-TRANSPORT_NAMES = {"network": "网络", "usb-adb": "USB (adb)", "usb-serial": "USB 串口"}
+TRANSPORT_NAMES = {"network": "网络", "usb-adb": "USB (adb)", "usb-serial": "USB 串口", "usb-serial-mux": "串口汇聚"}
 STATE_NAMES = {"idle": "空闲", "running": "运行中", "done": "完成", "error": "错误", "stopped": "已停止",
                "paused": "暂停"}
 

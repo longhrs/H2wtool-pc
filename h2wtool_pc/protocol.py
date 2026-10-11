@@ -21,6 +21,10 @@ DISCOVERY_MAGIC = "H2W_DISCOVER"
 # 单条消息最大字节数（包括 base64 文件内容）
 MAX_LINE_BYTES = 16 * 1024 * 1024
 
+# 与控制台文本混在同一串口上的协议消息 (bootloader 等不能独占串口的 stub) 以此前缀开头，
+# 例如 `@H2W {"type":"result",...}`。前缀前允许有时间戳等杂字符。
+TAG_PREFIX = b"@H2W "
+
 
 class MsgType:
     # Android -> PC
@@ -83,6 +87,18 @@ def decode_line(line: bytes) -> dict:
     if not isinstance(msg.get("type"), str):
         raise ProtocolError("消息缺少 type 字段")
     return msg
+
+
+def split_tagged(line: bytes) -> bytes | None:
+    """行里带 TAG_PREFIX 时返回前缀之后的 JSON 部分，否则返回 None。"""
+    idx = line.find(TAG_PREFIX)
+    return None if idx < 0 else line[idx + len(TAG_PREFIX):]
+
+
+def console_log_message(line: bytes) -> dict:
+    """把一行控制台文本包装成 log 消息 (tool=console)。"""
+    text = line.decode("utf-8", errors="replace").rstrip("\r\n")
+    return {"type": MsgType.LOG, "tool": "console", "level": "debug", "text": text}
 
 
 class LineDecoder:

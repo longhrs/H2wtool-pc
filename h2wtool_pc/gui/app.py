@@ -36,6 +36,11 @@ def run_gui(data_dir: Path, settings: Settings, args) -> int:
             hub.open_serial(port, settings.serial_baudrate)
         except Exception as e:
             win.log("error", f"打开串口 {port} 失败: {e}")
+    for port in getattr(args, "serial_mux", []) or []:
+        try:
+            hub.open_serial_mux(port, settings.serial_baudrate)
+        except Exception as e:
+            win.log("error", f"打开汇聚串口 {port} 失败: {e}")
     win.show()
     code = app.exec()
     store.close()

@@ -155,7 +155,10 @@ class MainWindow(QMainWindow):
         if not port:
             return
         try:
-            self.hub.open_serial(port, baud)
+            if dlg.selected_mux():
+                self.hub.open_serial_mux(port, baud)
+            else:
+                self.hub.open_serial(port, baud)
         except Exception as e:
             QMessageBox.critical(self, "打开串口失败", f"{port}: {e}")
 

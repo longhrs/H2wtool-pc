@@ -24,6 +24,34 @@ Android 向 UDP `255.255.255.255:9528` 广播字符串 `H2W_DISCOVER`，PC 回�
 
 收到回复后用 **回复包的来源 IP** + `tcp_port` 建立 TCP 连接。
 
+### 1.2 bootloader / 控制台串口上的 stub (只读)
+
+有些 stub 不能独占串口，例如 LK bootloader 里的 DDR memtest：协议消息和普通控制台打印混在同一个 UART 上。
+这类 stub 在每条协议消息前加前缀 `@H2W ` (前缀前允许有时间戳等字符)：
+
+```
+DDR mem test start
+@H2W {"type":"hello","model":"UNISOC LK","tools":["memtest"],"passive":true}
+@H2W {"type":"status","tool":"memtest","state":"running","progress":33,"message":"2/3 Stuck address"}
+@H2W {"type":"result","tool":"memtest","result":"PASS","duration_s":95,"summary":{...}}
+```
+
+PC 端串口 (以及 SerialMux 汇聚口的每一路) 的处理规则：
+
+- 带 `@H2W ` 前缀的行按协议消息处理；整行是合法 JSON 消息的也照常处理。
+- 其余行作为 `tool=console` 的日志保存到设备日志里，不算协议错误。
+- 串口不做心跳超时 (bootloader 跑测试时可能几分钟没有输出)。
+- 没有握手、或 `hello` 里带 `"passive": true` 的设备是**只读**的：PC 不回 `welcome`/`ack`，也不能下发参数或命令
+  (往 bootloader 控制台写字节可能打断自动启动)。没有 `test_id` 的结果不去重，所以只读 stub 不要重发。
+- 没有 `device_id` 时用串口名 (如 `COM5`、`COM7#ch3`) 作为设备 ID。
+
+### 1.3 SerialMux 汇聚口
+
+[longhrs/uart](https://github.com/longhrs/uart) 的 SerialMux 把最多 32 路 UART 打包到一个输出口，帧格式
+`A5 5A | 源端口 | 序号 | 长度(2, 大端) | payload | XOR 校验`。PC 端“打开串口”时勾选“SerialMux 汇聚口”
+(无界面模式 `--serial-mux COM7`)，每个源端口在收到第一帧时作为一台独立设备 (`COM7#ch<n>`) 出现，
+按上一节的规则处理。汇聚口是单向的，PC 不回发数据。
+
 ## 2. 帧格式 (JSON Lines)
 
 - 每条消息是一个 **UTF-8 编码的 JSON 对象**，以 `\n` 结尾，一行一条。

@@ -249,3 +249,120 @@ def test_discovery(tmp_path):
         s.close()
     finally:
         d.stop()
+
+
+# ---------------------------------------------------------------- 串口控制台 stub (bootloader memtest)
+def test_split_tagged_and_console_log():
+    assert protocol.split_tagged(b'[12.3] @H2W {"type":"status"}') == b'{"type":"status"}'
+    assert protocol.split_tagged(b"DDR mem test start") is None
+    m = protocol.console_log_message(b"DDR freq:3\r")
+    assert m["type"] == MsgType.LOG and m["tool"] == "console" and m["text"] == "DDR freq:3"
+
+
+class FakeConsoleLink:
+    """模拟接在 bootloader 控制台上的串口：记录 PC 写出的字节。"""
+
+    @staticmethod
+    def make(handler):
+        from h2wtool_pc.transport import Link
+
+        class _L(Link):
+            transport = "usb-serial"
+            console_text = True
+            idle_timeout = False
+
+            def __init__(self):
+                super().__init__(handler, "COM9")
+                self.written = []
+
+            def _write_bytes(self, data):
+                self.written.append(data)
+
+            def _close_impl(self):
+                pass
+
+        link = _L()
+        handler.on_link_opened(link)
+        return link
+
+
+MEMTEST_UART = (
+    b"DDR mem test start\r\n"
+    b'@H2W {"type":"hello","model":"UNISOC LK","tools":["memtest"],"passive":true,"ddr_size_mb":4096}\r\n'
+    b"{not json, a console line that starts with a brace\r\n"
+    b'@H2W {"type":"status","tool":"memtest","state":"running","progress":33,"message":"2/3 Stuck address"}\r\n'
+    b"memtest Stuck address failed: 0x82000000 act:0x1 exp:0x0\r\n"
+    b'@H2W {"type":"result","tool":"memtest","result":"FAIL","duration_s":95,'
+    b'"summary":{"size_mb":2048,"tests":3,"tests_failed":1,"errors":1},"details":{"first_test":"Stuck address"}}\r\n'
+)
+
+
+def test_hub_serial_console_stub(hub):
+    hub.heartbeat_timeout_s = 1
+    link = FakeConsoleLink.make(hub)
+    link._feed(MEMTEST_UART[:37])
+    link._feed(MEMTEST_UART[37:])
+    dev = hub.device(link.link_id)
+    assert dev.greeted and dev.passive and dev.model == "UNISOC LK"
+    rows = hub.store.query()
+    assert len(rows) == 1 and rows[0]["result"] == "FAIL" and rows[0]["device_id"] == "COM9"
+    assert not any(e.kind == "error" for e in hub.events)
+    assert sum(e.kind == "log" and e.data["tool"] == "console" for e in hub.events) == 3
+    assert link.written == []  # 不向 bootloader 控制台回写 (welcome/ack 都不发)
+    with pytest.raises(ValueError):
+        hub.send_command(link.link_id, "memtest", "start")
+    time.sleep(2.5)  # 超过心跳超时也不断开
+    assert hub.device(link.link_id) is not None
+
+
+def test_serial_android_app_still_gets_replies(hub):
+    link = FakeConsoleLink.make(hub)
+    link._feed(protocol.encode(protocol.make_message(MsgType.HELLO, device_id="D9")))
+    assert not hub.device(link.link_id).passive
+    assert json.loads(link.written[0])["type"] == MsgType.WELCOME
+
+
+# ---------------------------------------------------------------- SerialMux 汇聚口
+def mux_frame(port, seq, payload):
+    body = bytes([port, seq, len(payload) >> 8, len(payload) & 0xFF]) + payload
+    x = 0
+    for b in body:
+        x ^= b
+    return b"\xa5\x5a" + body + bytes([x])
+
+
+def test_mux_frame_decoder():
+    from h2wtool_pc.transport import MuxFrameDecoder
+
+    stream = b"junk\xa5" + mux_frame(1, 0, b"hello") + mux_frame(31, 7, b"") + mux_frame(2, 1, b"\xa5\x5aX")
+    bad = bytearray(mux_frame(4, 0, b"zz"))
+    bad[-1] ^= 0xFF
+    stream = bytes(bad) + stream
+    d = MuxFrameDecoder()
+    out = []
+    for i in range(0, len(stream), 3):
+        out += d.feed(stream[i:i + 3])
+    assert out == [(1, b"hello"), (31, b""), (2, b"\xa5\x5aX")]
+    assert d.bad_frames >= 1
+
+
+def test_hub_serial_mux(hub):
+    from h2wtool_pc.transport import SerialMuxReader
+
+    class FakeSerial:
+        def close(self):
+            pass
+
+    reader = SerialMuxReader(hub, "COM7", ser=FakeSerial())
+    a = MEMTEST_UART
+    b = MEMTEST_UART.replace(b'"FAIL"', b'"PASS"')
+    # 两路交错、每路的行被拆在多帧里
+    for i in range(0, max(len(a), len(b)), 40):
+        reader.dispatch(mux_frame(0, i & 0xFF, a[i:i + 40]) + mux_frame(3, i & 0xFF, b[i:i + 40]))
+    devs = sorted(d.peer for d in hub.devices())
+    assert devs == ["COM7#ch0", "COM7#ch3"]
+    rows = {r["device_id"]: r["result"] for r in hub.store.query()}
+    assert rows == {"COM7#ch0": "FAIL", "COM7#ch3": "PASS"}
+    assert all(d.transport == "usb-serial-mux" and d.passive for d in hub.devices())
+    reader.close()
+    assert not hub.devices()

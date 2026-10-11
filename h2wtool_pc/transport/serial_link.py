@@ -30,6 +30,8 @@ def list_serial_ports() -> list[tuple[str, str]]:
 
 class SerialLink(Link):
     transport = "usb-serial"
+    console_text = True
+    idle_timeout = False
 
     def __init__(self, handler: LinkHandler, port: str, baudrate: int = 115200):
         if serial is None:

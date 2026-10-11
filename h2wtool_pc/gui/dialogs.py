@@ -104,6 +104,9 @@ class SerialDialog(QDialog):
             form.addRow("提示", QLabel("未安装 pyserial，无法使用串口 (pip install pyserial)"))
         form.addRow("串口", row)
         form.addRow("波特率", self.baud)
+        self.mux = QCheckBox("SerialMux 汇聚口 (按源端口拆成多台设备)")
+        self.mux.setToolTip("串口另一端是 SerialMux App 的输出口 (A5 5A 帧格式) 时勾选")
+        form.addRow("", self.mux)
         bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
@@ -114,6 +117,9 @@ class SerialDialog(QDialog):
         self.port.clear()
         for dev, desc in list_serial_ports():
             self.port.addItem(f"{dev}  {desc}".strip(), dev)
+
+    def selected_mux(self) -> bool:
+        return self.mux.isChecked()
 
     def selected(self) -> tuple[str, int]:
         text = self.port.currentText().strip()
