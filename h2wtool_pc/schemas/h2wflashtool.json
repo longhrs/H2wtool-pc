@@ -1,0 +1,52 @@
+{
+  "tool": "h2wflashtool",
+  "order": 20,
+  "title": "H2wFlashTool 存储测试",
+  "description": "下发给 Android 端 H2wFlashTool 的测试参数 (写满-校验方式的 Flash 容量/可靠性/速度测试)。字段可在用户数据目录 schemas/h2wflashtool.json 中覆盖定制。",
+  "fields": [
+    {"key": "target_path", "label": "测试目录", "type": "string", "default": "/sdcard/h2w_test",
+     "group": "测试范围", "help": "测试文件写入的目录"},
+    {"key": "test_size_mb", "label": "测试容量 (MB)", "type": "int", "default": 0, "min": 0, "max": 16777216,
+     "group": "测试范围", "help": "0 = 使用全部剩余空间 (减去保留空间)"},
+    {"key": "reserve_mb", "label": "保留空间 (MB)", "type": "int", "default": 512, "min": 0, "max": 1048576,
+     "group": "测试范围"},
+    {"key": "file_size_mb", "label": "单个测试文件大小 (MB)", "type": "int", "default": 1024, "min": 1, "max": 65536,
+     "group": "测试范围"},
+
+    {"key": "mode", "label": "测试模式", "type": "enum", "default": "write_verify", "group": "测试方式",
+     "options": [
+       {"value": "write_verify", "label": "写入 + 校验"},
+       {"value": "write_only", "label": "仅写入"},
+       {"value": "verify_only", "label": "仅校验 (已有测试文件)"}
+     ]},
+    {"key": "block_size_kb", "label": "读写块大小 (KB)", "type": "enum", "default": 1024, "group": "测试方式",
+     "options": [
+       {"value": 4, "label": "4 KB"},
+       {"value": 64, "label": "64 KB"},
+       {"value": 512, "label": "512 KB"},
+       {"value": 1024, "label": "1 MB"},
+       {"value": 4096, "label": "4 MB"}
+     ]},
+    {"key": "io_mode", "label": "IO 方式", "type": "enum", "default": "fsync", "group": "测试方式",
+     "options": [
+       {"value": "buffered", "label": "缓存 IO"},
+       {"value": "fsync", "label": "每个文件 fsync"},
+       {"value": "direct", "label": "O_DIRECT (绕过缓存)"}
+     ]},
+    {"key": "pattern", "label": "数据模式", "type": "enum", "default": "h2testw", "group": "测试方式",
+     "options": [
+       {"value": "h2testw", "label": "伪随机 (按扇区偏移生成，可校验)"},
+       {"value": "random", "label": "随机"},
+       {"value": "zeros", "label": "全 0x00"},
+       {"value": "ones", "label": "全 0xFF"}
+     ]},
+
+    {"key": "loops", "label": "循环次数", "type": "int", "default": 1, "min": 0, "max": 100000,
+     "group": "执行控制", "help": "0 = 无限循环"},
+    {"key": "delete_after", "label": "测试完成后删除测试文件", "type": "bool", "default": true, "group": "执行控制"},
+    {"key": "stop_on_error", "label": "出错即停止", "type": "bool", "default": true, "group": "执行控制"},
+    {"key": "record_speed", "label": "记录读写速度曲线", "type": "bool", "default": true, "group": "执行控制"},
+    {"key": "report_interval_s", "label": "进度上报间隔 (秒)", "type": "int", "default": 5, "min": 1, "max": 3600,
+     "group": "执行控制"}
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "tool": "memtest",
+  "order": 10,
+  "title": "MemTest 内存测试",
+  "description": "下发给 Android 端 memtest 的测试参数。字段可在用户数据目录 schemas/memtest.json 中覆盖定制。",
+  "fields": [
+    {"key": "size_mb", "label": "测试内存大小 (MB)", "type": "int", "default": 512, "min": 0, "max": 1048576,
+     "group": "测试范围", "help": "0 = 按“可用内存比例”自动计算"},
+    {"key": "free_percent", "label": "可用内存比例 (%)", "type": "int", "default": 80, "min": 1, "max": 95,
+     "group": "测试范围", "help": "仅在测试内存大小为 0 时生效"},
+    {"key": "threads", "label": "测试线程数", "type": "int", "default": 0, "min": 0, "max": 64,
+     "group": "测试范围", "help": "0 = 自动 (CPU 核数)"},
+
+    {"key": "loops", "label": "循环次数", "type": "int", "default": 1, "min": 0, "max": 100000,
+     "group": "执行控制", "help": "0 = 无限循环，直到超时或手动停止"},
+    {"key": "duration_min", "label": "最长测试时间 (分钟)", "type": "int", "default": 0, "min": 0, "max": 100000,
+     "group": "执行控制", "help": "0 = 不限时"},
+    {"key": "stop_on_error", "label": "出错即停止", "type": "bool", "default": true, "group": "执行控制"},
+    {"key": "keep_screen_on", "label": "测试期间保持亮屏", "type": "bool", "default": true, "group": "执行控制"},
+    {"key": "report_interval_s", "label": "进度上报间隔 (秒)", "type": "int", "default": 5, "min": 1, "max": 3600,
+     "group": "执行控制"},
+
+    {"key": "tests", "label": "测试项", "type": "multi", "group": "测试项",
+     "options": [
+       {"value": "stuck_address", "label": "Stuck Address"},
+       {"value": "random_value", "label": "Random Value"},
+       {"value": "compare_xor", "label": "Compare XOR"},
+       {"value": "compare_sub", "label": "Compare SUB"},
+       {"value": "compare_mul", "label": "Compare MUL"},
+       {"value": "compare_div", "label": "Compare DIV"},
+       {"value": "compare_or", "label": "Compare OR"},
+       {"value": "compare_and", "label": "Compare AND"},
+       {"value": "seq_increment", "label": "Sequential Increment"},
+       {"value": "solid_bits", "label": "Solid Bits"},
+       {"value": "block_seq", "label": "Block Sequential"},
+       {"value": "checkerboard", "label": "Checkerboard"},
+       {"value": "bit_spread", "label": "Bit Spread"},
+       {"value": "bit_flip", "label": "Bit Flip"},
+       {"value": "walking_ones", "label": "Walking Ones"},
+       {"value": "walking_zeros", "label": "Walking Zeros"},
+       {"value": "write_8bit", "label": "8-bit Writes"},
+       {"value": "write_16bit", "label": "16-bit Writes"}
+     ],
+     "default": ["stuck_address", "random_value", "compare_xor", "compare_sub", "compare_mul", "compare_div",
+                 "compare_or", "compare_and", "seq_increment", "solid_bits", "block_seq", "checkerboard",
+                 "bit_spread", "bit_flip", "walking_ones", "walking_zeros", "write_8bit", "write_16bit"]}
+  ]
+}

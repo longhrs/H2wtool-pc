@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "h2wtool-pc"
+dynamic = ["version"]
+description = "PC 端工具：接收 Android memtest / H2wFlashTool 测试结果并下发测试参数"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["PySide6>=6.5", "pyserial>=3.5"]
+
+[project.scripts]
+h2wtool-pc = "h2wtool_pc.__main__:main"
+
+[tool.setuptools]
+packages = ["h2wtool_pc", "h2wtool_pc.core", "h2wtool_pc.transport", "h2wtool_pc.gui", "h2wtool_pc.schemas"]
+
+[tool.setuptools.package-data]
+"h2wtool_pc.schemas" = ["*.json"]
+
+[tool.setuptools.dynamic]
+version = {attr = "h2wtool_pc.__version__"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
