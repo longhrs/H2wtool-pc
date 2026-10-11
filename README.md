@@ -23,7 +23,40 @@ memtest、H2wFlashTool 的测试结果，并可以在 PC 上设置这两个工�
   - 下发到选中设备 / 全部设备，从设备读取当前参数，下发并开始测试，停止测试
 - **无界面模式**：`--headless` 只做结果接收与保存，适合产线工位长期运行
 
-## 安装与运行
+## Windows 安装包
+
+每次推送代码，GitHub Actions 会在 Windows 上自动构建、自测并发布：
+
+- **安装包** `H2wToolPC-Setup-<版本>.exe` (推荐)
+- **免安装版** `H2wToolPC-portable-<版本>.zip`
+
+下载位置：仓库 Releases 中的 `dev-build` 预发布版；或 Actions → “Build Windows” → 对应运行记录底部的 Artifacts。
+打 `v*` 标签 (如 `v0.1.0`) 会生成正式 Release。
+
+安装后包含：
+
+| 程序 | 用途 |
+| --- | --- |
+| `H2wToolPC.exe` | 图形界面 |
+| `H2wToolPC-cli.exe` | 命令行 / 无界面模式 (`H2wToolPC-cli.exe --headless`) |
+| `H2wDeviceSimulator.exe` | Android 端模拟器，没有手机也能验证 |
+
+安装时勾选防火墙选项会自动放行本程序 (WiFi/网线连接需要)。
+
+### 安装后快速验证 (不需要手机)
+
+1. 打开 **H2wTool PC**，状态栏显示绿色“● 监听 0.0.0.0:9527”。
+2. 开始菜单 → H2wTool PC → **Device Simulator (memtest x3)**：
+   左侧出现模拟设备，“测试结果”页陆续出现 3 条 memtest 结果 (含 PASS/FAIL)。
+3. 开始菜单 → **Device Simulator (wait for commands)**，在左侧选中该设备：
+   - “MemTest 设置”页改几个参数 → “下发并开始测试”，日志页显示“设备已确认”，随后出现新结果；
+   - “从设备读取”，表单变为设备上的参数；
+   - “测试结果”页 → “导出 CSV”，用 Excel 打开。
+4. 真机 USB 验证：手机开 USB 调试并连接，把 [platform-tools](https://developer.android.com/tools/releases/platform-tools)
+   解压到安装目录 (得到 `安装目录\platform-tools\adb.exe`)，或在“设置”中指定 adb 路径；
+   左下“USB adb 设备”列表出现手机即表示 `adb reverse` 已自动建立。
+
+## 从源码运行
 
 需要 Python 3.10+。
 
@@ -37,15 +70,15 @@ python -m h2wtool_pc --help
 USB (adb) 方式需要安装 [Android platform-tools](https://developer.android.com/tools/releases/platform-tools)，
 并让 `adb` 在 PATH 中 (或在“设置”里指定 adb 路径)，手机需开启 USB 调试。
 
-### 打包成 Windows exe
+### 手动打包
 
 ```bash
 pip install pyinstaller
-pyinstaller h2wtool_pc.spec
-# 输出: dist/H2wToolPC/H2wToolPC.exe
+pyinstaller h2wtool_pc.spec                                   # 输出 dist/H2wToolPC/
+iscc /DAppVersion=0.1.0 installer\h2wtool_pc.iss              # (Windows, Inno Setup 6) 输出安装包
 ```
 
-可以把 `adb.exe`、`AdbWinApi.dll`、`AdbWinUsbApi.dll` 放到 exe 同目录并在设置中指定 adb 路径。
+adb 查找顺序：设置中指定的路径 → 程序目录下 `platform-tools\adb.exe` 或 `adb.exe` → PATH → `ANDROID_HOME`。
 
 ## 使用流程
 

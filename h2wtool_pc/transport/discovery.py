@@ -49,6 +49,8 @@ class DiscoveryResponder:
         while self._running and sock:
             try:
                 data, addr = sock.recvfrom(2048)
+            except ConnectionResetError:
+                continue  # Windows: 之前的回复收到 ICMP 端口不可达，忽略
             except OSError:
                 break
             if not data.strip().startswith(protocol.DISCOVERY_MAGIC.encode()):

@@ -1,0 +1,98 @@
+name: Build Windows
+
+on:
+  push:
+    branches: [main, master, "claude/**"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt pyinstaller
+
+      - name: Unit tests
+        run: pytest -q
+
+      - name: Read version
+        shell: pwsh
+        run: |
+          $v = python -c "import h2wtool_pc; print(h2wtool_pc.__version__)"
+          "APP_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: PyInstaller
+        run: pyinstaller --noconfirm h2wtool_pc.spec
+
+      - name: Smoke test packaged exe
+        shell: pwsh
+        run: |
+          $d = "dist\H2wToolPC"
+          & "$d\H2wToolPC-cli.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "cli --version failed" }
+          $data = Join-Path $env:RUNNER_TEMP "h2wdata"
+          $srv = Start-Process "$d\H2wToolPC-cli.exe" -ArgumentList "--headless","--no-adb","--port","19527","--data-dir",$data -PassThru `
+                 -RedirectStandardOutput "$env:RUNNER_TEMP\srv.log" -RedirectStandardError "$env:RUNNER_TEMP\srv.err"
+          Start-Sleep -Seconds 5
+          & "$d\H2wDeviceSimulator.exe" --port 19527 --auto memtest --count 2 --speed 0.05 --exit-after-auto
+          if ($LASTEXITCODE -ne 0) { throw "simulator failed" }
+          Start-Sleep -Seconds 1
+          Stop-Process -Id $srv.Id -Force
+          Get-Content "$env:RUNNER_TEMP\srv.log"
+          $n = python -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('select count(*) from results').fetchone()[0])" "$data\results.db"
+          if ([int]$n -ne 2) { throw "expected 2 results, got $n" }
+          # 图形界面能正常启动 (5 秒内不崩溃)
+          $gui = Start-Process "$d\H2wToolPC.exe" -ArgumentList "--data-dir",(Join-Path $env:RUNNER_TEMP "guidata"),"--port","19528" -PassThru
+          Start-Sleep -Seconds 8
+          if ($gui.HasExited) { throw "GUI exited early with code $($gui.ExitCode)" }
+          Stop-Process -Id $gui.Id -Force
+
+      - name: Portable zip
+        shell: pwsh
+        run: Compress-Archive -Path dist\H2wToolPC -DestinationPath "dist\H2wToolPC-portable-$env:APP_VERSION.zip"
+
+      - name: Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+          & $iscc "/DAppVersion=$env:APP_VERSION" installer\h2wtool_pc.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: H2wToolPC-windows-${{ env.APP_VERSION }}
+          path: |
+            dist/H2wToolPC-Setup-*.exe
+            dist/H2wToolPC-portable-*.zip
+
+      - name: Publish download (dev-build pre-release)
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = if ($env:GITHUB_REF_TYPE -eq "tag") { $env:GITHUB_REF_NAME } else { "dev-build" }
+          if ($tag -eq "dev-build") {
+            gh release delete dev-build --yes --cleanup-tag 2>$null
+            gh release create dev-build --prerelease --target $env:GITHUB_SHA --title "Dev build $env:APP_VERSION ($($env:GITHUB_SHA.Substring(0,7)))" `
+              --notes "Automatic build from $env:GITHUB_REF_NAME. Download H2wToolPC-Setup-*.exe to install, or the portable zip." `
+              (Get-ChildItem dist\H2wToolPC-Setup-*.exe).FullName (Get-ChildItem dist\H2wToolPC-portable-*.zip).FullName
+          } else {
+            gh release create $tag --title "H2wTool PC $tag" --generate-notes `
+              (Get-ChildItem dist\H2wToolPC-Setup-*.exe).FullName (Get-ChildItem dist\H2wToolPC-portable-*.zip).FullName
+          }

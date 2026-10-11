@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
@@ -29,13 +30,19 @@ class AdbDevice:
 def find_adb(custom_path: str = "") -> str | None:
     if custom_path and os.path.isfile(custom_path):
         return custom_path
+    exe_name = "adb.exe" if sys.platform == "win32" else "adb"
+    # 程序目录下的 adb (把 platform-tools 解压到程序目录即可使用)
+    base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parents[2]
+    for cand in (base / "platform-tools" / exe_name, base / exe_name):
+        if cand.is_file():
+            return str(cand)
     found = shutil.which("adb")
     if found:
         return found
     for env in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
         root = os.environ.get(env)
         if root:
-            cand = os.path.join(root, "platform-tools", "adb.exe" if sys.platform == "win32" else "adb")
+            cand = os.path.join(root, "platform-tools", exe_name)
             if os.path.isfile(cand):
                 return cand
     return None

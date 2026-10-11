@@ -11,6 +11,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import socket
+import sys
 import threading
 
 from .base import Link, LinkHandler
@@ -80,7 +81,11 @@ class TcpServer:
         if self._running:
             return
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if sys.platform == "win32":
+            # Windows 上 SO_REUSEADDR 允许多个进程绑定同一端口，改用独占
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind((self.host, self.port))
         sock.listen(16)
         self.port = sock.getsockname()[1]  # 端口为 0 时取实际分配的端口
