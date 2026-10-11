@@ -194,10 +194,18 @@ def main() -> int:
     dev = SimDevice(sock, args.device_id or f"SIM{uuid.uuid4().hex[:6].upper()}", args.model,
                     args.fail_rate, args.speed)
     if args.exit_after_auto and args.auto:
-        threading.Thread(target=dev.run, args=(args.auto, args.count), daemon=True).start()
+        runner = threading.Thread(target=dev.run, args=(args.auto, args.count), daemon=True)
+        runner.start()
         dev.done.wait()
-        time.sleep(0.5)
+        time.sleep(0.5)  # 等最后的 ack 到达
+        dev.alive = False
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
         sock.close()
+        # 等接收线程结束再退出，否则它还在打印时解释器关闭会触发 Fatal Python error (Windows)
+        runner.join(timeout=5)
         return 0
     try:
         dev.run(args.auto, args.count)
