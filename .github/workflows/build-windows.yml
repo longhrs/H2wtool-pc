@@ -43,17 +43,30 @@ jobs:
           & "$d\H2wToolPC-cli.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "cli --version failed" }
           $data = Join-Path $env:RUNNER_TEMP "h2wdata"
+          $log = "$env:RUNNER_TEMP\srv.log"; $err = "$env:RUNNER_TEMP\srv.err"
           $srv = Start-Process "$d\H2wToolPC-cli.exe" -ArgumentList "--headless","--no-adb","--port","19527","--data-dir",$data -PassThru `
-                 -RedirectStandardOutput "$env:RUNNER_TEMP\srv.log" -RedirectStandardError "$env:RUNNER_TEMP\srv.err"
-          Start-Sleep -Seconds 5
-          & "$d\H2wDeviceSimulator.exe" --port 19527 --auto memtest --count 2 --speed 0.05 --exit-after-auto
-          if ($LASTEXITCODE -ne 0) { throw "simulator failed" }
-          Start-Sleep -Seconds 1
-          Stop-Process -Id $srv.Id -Force
-          Get-Content "$env:RUNNER_TEMP\srv.log"
+                 -RedirectStandardOutput $log -RedirectStandardError $err
+          try {
+            # 等待端口就绪 (最多 30 秒)
+            $ready = $false
+            for ($i = 0; $i -lt 60 -and -not $ready; $i++) {
+              if ($srv.HasExited) { throw "server exited early with code $($srv.ExitCode)" }
+              $c = [System.Net.Sockets.TcpClient]::new()
+              try { $ready = $c.ConnectAsync("127.0.0.1", 19527).Wait(500) } catch { } finally { $c.Dispose() }
+              if (-not $ready) { Start-Sleep -Milliseconds 500 }
+            }
+            if (-not $ready) { throw "server did not start listening" }
+            & "$d\H2wDeviceSimulator.exe" --port 19527 --auto memtest --count 2 --speed 0.05 --exit-after-auto
+            if ($LASTEXITCODE -ne 0) { throw "simulator failed" }
+            Start-Sleep -Seconds 1
+          } finally {
+            if (-not $srv.HasExited) { Stop-Process -Id $srv.Id -Force }
+            Write-Host "---- server stdout ----"; Get-Content $log -Encoding utf8 -ErrorAction SilentlyContinue
+            Write-Host "---- server stderr ----"; Get-Content $err -Encoding utf8 -ErrorAction SilentlyContinue
+          }
           $n = python -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('select count(*) from results').fetchone()[0])" "$data\results.db"
           if ([int]$n -ne 2) { throw "expected 2 results, got $n" }
-          # 图形界面能正常启动 (5 秒内不崩溃)
+          # 图形界面能正常启动 (8 秒内不崩溃)
           $gui = Start-Process "$d\H2wToolPC.exe" -ArgumentList "--data-dir",(Join-Path $env:RUNNER_TEMP "guidata"),"--port","19528" -PassThru
           Start-Sleep -Seconds 8
           if ($gui.HasExited) { throw "GUI exited early with code $($gui.ExitCode)" }

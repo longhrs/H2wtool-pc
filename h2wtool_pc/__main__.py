@@ -89,7 +89,18 @@ def run_headless(args, data_dir: Path, settings: Settings) -> int:
     return 0
 
 
+def force_utf8_stdio() -> None:
+    """Windows 下输出被重定向到文件/管道时默认是 ANSI 编码，打印中文会崩溃。"""
+    for stream in (sys.stdout, sys.stderr):
+        if stream is not None and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    force_utf8_stdio()
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")

@@ -24,6 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from h2wtool_pc import protocol  # noqa: E402
+from h2wtool_pc.__main__ import force_utf8_stdio  # noqa: E402
 from h2wtool_pc.core.config_schema import load_schemas  # noqa: E402
 from h2wtool_pc.protocol import MsgType  # noqa: E402
 
@@ -170,6 +171,7 @@ class SimDevice:
 
 
 def main() -> int:
+    force_utf8_stdio()
     ap = argparse.ArgumentParser(description="H2wTool Android 端模拟器")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=protocol.DEFAULT_TCP_PORT)
