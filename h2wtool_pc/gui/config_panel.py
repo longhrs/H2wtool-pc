@@ -7,7 +7,8 @@ import time
 from typing import Callable
 
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout, QGroupBox,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout,
+    QGroupBox,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea,
     QSpinBox, QVBoxLayout, QWidget,
 )
@@ -50,20 +51,24 @@ class MultiSelect(QWidget):
 
 
 class ConfigForm(QWidget):
-    """schema -> 表单控件"""
+    """schema -> 表单控件。advanced 为 None 时显示全部字段，否则只显示该类字段。"""
 
-    def __init__(self, schema: ToolSchema, parent=None):
+    def __init__(self, schema: ToolSchema, advanced: bool | None = None, description: str = "", parent=None):
         super().__init__(parent)
         self.schema = schema
         self._getters: dict[str, Callable] = {}
         self._setters: dict[str, Callable] = {}
         lay = QVBoxLayout(self)
-        if schema.description:
-            desc = QLabel(schema.description)
+        if description:
+            desc = QLabel(description)
             desc.setWordWrap(True)
             desc.setStyleSheet("color: gray;")
             lay.addWidget(desc)
         for group, fields in schema.groups():
+            if advanced is not None:
+                fields = [f for f in fields if f.advanced == advanced]
+                if not fields:
+                    continue
             box = QGroupBox(group)
             if len(fields) == 1 and fields[0].type == "multi":
                 inner = QVBoxLayout(box)
@@ -81,6 +86,9 @@ class ConfigForm(QWidget):
             lay.addWidget(box)
         lay.addStretch(1)
         self.set_config(schema.defaults())
+
+    def is_empty(self) -> bool:
+        return not self._getters
 
     def _make_widget(self, f: Field) -> QWidget:
         if f.type == "int":
@@ -135,7 +143,73 @@ class ConfigForm(QWidget):
         return list(errors.values())
 
 
+class AdvancedDialog(QDialog):
+    """高级设置：一般保持默认的参数，以及预设 / 导入导出 / 单独下发等操作。"""
+
+    def __init__(self, panel: "ConfigPanel", form: ConfigForm, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"{panel.schema.title} - 高级设置")
+        self.resize(720, 640)
+        tip = QLabel("以下参数一般保持默认，非必要请勿修改。")
+        tip.setStyleSheet("color: #ef6c00;")
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(form)
+
+        # 预设
+        self.preset_combo = QComboBox()
+        self.preset_combo.setMinimumWidth(160)
+        b_load = QPushButton("加载预设")
+        b_load.clicked.connect(panel.load_preset)
+        b_save = QPushButton("保存为预设")
+        b_save.clicked.connect(panel.save_preset)
+        b_del = QPushButton("删除预设")
+        b_del.clicked.connect(panel.delete_preset)
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("预设:"))
+        for w in (self.preset_combo, b_load, b_save, b_del):
+            row1.addWidget(w)
+        row1.addStretch(1)
+
+        b_default = QPushButton("全部恢复默认")
+        b_default.clicked.connect(panel.restore_defaults)
+        b_import = QPushButton("导入 JSON")
+        b_import.clicked.connect(panel.import_json)
+        b_export = QPushButton("导出 JSON")
+        b_export.clicked.connect(panel.export_json)
+        row2 = QHBoxLayout()
+        for w in (b_default, b_import, b_export):
+            row2.addWidget(w)
+        row2.addStretch(1)
+
+        # 单独下发 / 读取 (不开始测试)
+        b_read = QPushButton("从设备读取")
+        b_read.clicked.connect(panel.read_from_device)
+        b_push = QPushButton("下发到选中设备")
+        b_push.clicked.connect(lambda: panel.push(False))
+        b_push_all = QPushButton("下发到全部设备")
+        b_push_all.clicked.connect(lambda: panel.push(True))
+        row3 = QHBoxLayout()
+        for w in (b_read, b_push, b_push_all):
+            row3.addWidget(w)
+        row3.addStretch(1)
+
+        bb = QDialogButtonBox()
+        bb.addButton("关闭", QDialogButtonBox.RejectRole)
+        bb.rejected.connect(self.reject)
+
+        lay = QVBoxLayout(self)
+        lay.addWidget(tip)
+        lay.addWidget(scroll, 1)
+        lay.addLayout(row1)
+        lay.addLayout(row2)
+        lay.addLayout(row3)
+        lay.addWidget(bb)
+
+
 class ConfigPanel(QWidget):
+    """测试页：主界面只放客户常用参数 + 开始/停止，其余收进“高级设置”。"""
+
     def __init__(self, schema: ToolSchema, hub: Hub, presets: PresetStore,
                  target_keys: Callable[[bool], list[str]], log: Callable[[str, str], None], parent=None):
         super().__init__(parent)
@@ -147,58 +221,50 @@ class ConfigPanel(QWidget):
         self.log = log
         self._awaiting_report: dict[str, float] = {}  # 设备 key -> 请求时间
 
-        self.form = ConfigForm(schema)
+        self.main_form = ConfigForm(schema, advanced=False, description=schema.description)
+        self.adv_form = ConfigForm(schema, advanced=True)
+        self.adv_dialog = AdvancedDialog(self, self.adv_form, self)
+        self.preset_combo = self.adv_dialog.preset_combo
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setWidget(self.form)
+        scroll.setWidget(self.main_form)
 
-        # 预设
-        self.preset_combo = QComboBox()
-        self.preset_combo.setMinimumWidth(160)
-        b_load = QPushButton("加载预设")
-        b_load.clicked.connect(self.load_preset)
-        b_save = QPushButton("保存为预设")
-        b_save.clicked.connect(self.save_preset)
-        b_del = QPushButton("删除预设")
-        b_del.clicked.connect(self.delete_preset)
-        b_default = QPushButton("恢复默认")
-        b_default.clicked.connect(lambda: self.form.set_config(self.schema.defaults()))
-        b_import = QPushButton("导入 JSON")
-        b_import.clicked.connect(self.import_json)
-        b_export = QPushButton("导出 JSON")
-        b_export.clicked.connect(self.export_json)
-        row1 = QHBoxLayout()
-        row1.addWidget(QLabel("预设:"))
-        for w in (self.preset_combo, b_load, b_save, b_del):
-            row1.addWidget(w)
-        row1.addStretch(1)
-        for w in (b_default, b_import, b_export):
-            row1.addWidget(w)
-
-        # 设备操作
-        b_read = QPushButton("从设备读取")
-        b_read.clicked.connect(self.read_from_device)
-        b_push = QPushButton("下发到选中设备")
-        b_push.clicked.connect(lambda: self.push(False))
-        b_push_all = QPushButton("下发到全部设备")
-        b_push_all.clicked.connect(lambda: self.push(True))
-        b_start = QPushButton("下发并开始测试")
+        b_adv = QPushButton("高级设置…")
+        b_adv.setEnabled(not self.adv_form.is_empty())
+        b_adv.clicked.connect(self.adv_dialog.exec)
+        b_start = QPushButton("开始测试")
         b_start.setStyleSheet("font-weight: bold;")
+        b_start.setMinimumWidth(120)
         b_start.clicked.connect(self.start_test)
         b_stop = QPushButton("停止测试")
+        b_stop.setMinimumWidth(120)
         b_stop.clicked.connect(self.stop_test)
-        row2 = QHBoxLayout()
-        for w in (b_read, b_push, b_push_all):
-            row2.addWidget(w)
-        row2.addStretch(1)
+        row = QHBoxLayout()
+        row.addWidget(b_adv)
+        row.addStretch(1)
         for w in (b_start, b_stop):
-            row2.addWidget(w)
+            row.addWidget(w)
 
         lay = QVBoxLayout(self)
-        lay.addLayout(row1)
         lay.addWidget(scroll, 1)
-        lay.addLayout(row2)
+        lay.addLayout(row)
         self.reload_presets()
+
+    # 主界面 + 高级设置两张表单合起来就是完整参数
+    def config(self) -> dict:
+        return {**self.adv_form.config(), **self.main_form.config()}
+
+    def set_config(self, cfg: dict) -> list[str]:
+        errors = self.main_form.set_config(cfg)  # 两张表单校验的是同一份 schema，错误只取一次
+        self.adv_form.set_config(cfg)
+        return errors
+
+    def _ui_parent(self) -> QWidget:
+        # 高级设置打开时，弹窗要挂在它上面，否则可能被挡住
+        return self.adv_dialog if self.adv_dialog.isVisible() else self
+
+    def restore_defaults(self) -> None:
+        self.set_config(self.schema.defaults())
 
     # ---------------------------------------------------------------- 预设 / 文件
     def reload_presets(self) -> None:
@@ -210,65 +276,65 @@ class ConfigPanel(QWidget):
         if not name:
             return
         try:
-            errors = self.form.set_config(self.presets.load(self.tool, name))
+            errors = self.set_config(self.presets.load(self.tool, name))
         except (OSError, json.JSONDecodeError) as e:
-            QMessageBox.critical(self, "加载失败", str(e))
+            QMessageBox.critical(self._ui_parent(), "加载失败", str(e))
             return
         if errors:
-            QMessageBox.warning(self, "部分参数无效", "\n".join(errors))
+            QMessageBox.warning(self._ui_parent(), "部分参数无效", "\n".join(errors))
 
     def save_preset(self) -> None:
-        name, ok = QInputDialog.getText(self, "保存预设", "预设名称:", text=self.preset_combo.currentText())
+        name, ok = QInputDialog.getText(self._ui_parent(), "保存预设", "预设名称:", text=self.preset_combo.currentText())
         if not ok or not name.strip():
             return
-        self.presets.save(self.tool, name.strip(), self.form.config())
+        self.presets.save(self.tool, name.strip(), self.config())
         self.reload_presets()
         self.preset_combo.setCurrentText(name.strip())
 
     def delete_preset(self) -> None:
         name = self.preset_combo.currentText()
-        if name and QMessageBox.question(self, "删除预设", f"删除预设 “{name}”？") == QMessageBox.Yes:
+        if name and QMessageBox.question(self._ui_parent(), "删除预设", f"删除预设 “{name}”？") == QMessageBox.Yes:
             self.presets.delete(self.tool, name)
             self.reload_presets()
 
     def import_json(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "导入参数", "", "JSON (*.json)")
+        path, _ = QFileDialog.getOpenFileName(self._ui_parent(), "导入参数", "", "JSON (*.json)")
         if not path:
             return
         try:
             with open(path, encoding="utf-8") as f:
                 data = json.load(f)
         except (OSError, json.JSONDecodeError) as e:
-            QMessageBox.critical(self, "导入失败", str(e))
+            QMessageBox.critical(self._ui_parent(), "导入失败", str(e))
             return
         if isinstance(data, dict) and "config" in data and isinstance(data["config"], dict):
             data = data["config"]
         if not isinstance(data, dict):
-            QMessageBox.critical(self, "导入失败", "文件内容必须是 JSON 对象")
+            QMessageBox.critical(self._ui_parent(), "导入失败", "文件内容必须是 JSON 对象")
             return
-        errors = self.form.set_config(data)
+        errors = self.set_config(data)
         if errors:
-            QMessageBox.warning(self, "部分参数无效", "\n".join(errors))
+            QMessageBox.warning(self._ui_parent(), "部分参数无效", "\n".join(errors))
 
     def export_json(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "导出参数", f"{self.tool}_config.json", "JSON (*.json)")
+        path, _ = QFileDialog.getSaveFileName(self._ui_parent(), "导出参数", f"{self.tool}_config.json", "JSON (*.json)")
         if not path:
             return
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"tool": self.tool, "config": self.form.config()}, f, ensure_ascii=False, indent=2)
+            json.dump({"tool": self.tool, "config": self.config()}, f, ensure_ascii=False, indent=2)
 
     # ---------------------------------------------------------------- 设备
     def _targets(self, all_devices: bool) -> list[str]:
         keys = self.target_keys(all_devices)
         if not keys:
-            QMessageBox.information(self, "没有目标设备",
+            QMessageBox.information(self._ui_parent(), "没有目标设备",
                                     "请先在左侧选择设备 (需要设备已连接并完成握手)。")
         return keys
 
     def _validated(self) -> dict | None:
-        cfg, errors = self.schema.validate(self.form.config())
+        cfg, errors = self.schema.validate(self.config())
         if errors:
-            QMessageBox.warning(self, "参数错误", "\n".join(errors.values()))
+            QMessageBox.warning(self._ui_parent(), "参数错误", "\n".join(errors.values()))
             return None
         return cfg
 
@@ -292,7 +358,7 @@ class ConfigPanel(QWidget):
     def read_from_device(self) -> None:
         keys = self._targets(False)
         if len(keys) > 1:
-            QMessageBox.information(self, "读取参数", "请只选择一台设备")
+            QMessageBox.information(self._ui_parent(), "读取参数", "请只选择一台设备")
             return
         for k in keys:
             self._awaiting_report[k] = time.time()
@@ -320,6 +386,6 @@ class ConfigPanel(QWidget):
         requested = self._awaiting_report.pop(device_key, None)
         if requested is None or time.time() - requested > 30:
             return  # 不是本页主动请求的，忽略 (日志里会记录)
-        errors = self.form.set_config(config)
+        errors = self.set_config(config)
         if errors:
-            QMessageBox.warning(self, "设备参数部分无效", "\n".join(errors))
+            QMessageBox.warning(self._ui_parent(), "设备参数部分无效", "\n".join(errors))

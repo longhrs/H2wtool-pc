@@ -177,7 +177,7 @@ Android 回复 `ack` + `config_report` (`ref` 为本消息 id)。
 ```json
 {"type":"command","id":"...","ts":...,"tool":"memtest","action":"start"}
 ```
-`action`: `start` | `stop`。PC 的“下发并开始测试”按钮会先发 `config_set` 再发 `command start`。
+`action`: `start` | `stop`。PC 测试页的“开始测试”按钮会先发 `config_set` 再发 `command start`。
 
 ### ack
 ```json

@@ -366,3 +366,11 @@ def test_hub_serial_mux(hub):
     assert all(d.transport == "usb-serial-mux" and d.passive for d in hub.devices())
     reader.close()
     assert not hub.devices()
+
+
+def test_schema_advanced_split():
+    s = load_schemas()["h2wflashtool"]
+    main = {f.key for f in s.fields if not f.advanced}
+    assert {"target_path", "min_write_mbps", "min_read_mbps", "max_life_used_percent"} <= main
+    assert s.field("io_mode").advanced and not s.field("loops").advanced
+    assert s.defaults()["max_life_used_percent"] == 0

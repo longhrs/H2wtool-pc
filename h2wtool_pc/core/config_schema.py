@@ -33,6 +33,7 @@ class Field:
     options: list[dict] = field(default_factory=list)  # [{"value":..., "label":...}]
     group: str = "参数"
     help: str = ""
+    advanced: bool = False  # True = 放到“高级设置”里，主界面不显示
 
     @property
     def option_values(self) -> list:
@@ -61,6 +62,7 @@ class Field:
             options=options,
             group=d.get("group", "参数"),
             help=d.get("help", ""),
+            advanced=bool(d.get("advanced", False)),
         )
         if f.default is None:
             f.default = f._implicit_default()
