@@ -12,6 +12,8 @@ memtest、H2wFlashTool 的测试结果，并可以在 PC 上设置这两个工�
   - SerialMux 汇聚口：一个串口收多块板子的 UART，按源端口拆成多台设备
   - 支持多台设备同时连接
 - **测试结果**
+  - 设备看板：一页 16 格，每台设备一格，显示 Flash 型号、固件版本、当前状态和最近一次结果 (PASS/FAIL 着色)，超过 16 台翻页
+  - 结果列表同样带 Flash 型号、固件版本列 (字段见 docs/PROTOCOL.md 的 hello / device_info)，可搜索、导出 CSV
   - 实时接收，保存到本地 SQLite 数据库；同一测试重复上报自动去重 (设备可放心重发)
   - 按工具 / 设备 / 结果 / 关键字过滤，PASS/FAIL 着色统计，查看完整原始数据
   - 导出 CSV (Excel 可直接打开)
@@ -20,7 +22,6 @@ memtest、H2wFlashTool 的测试结果，并可以在 PC 上设置这两个工�
   - 测试页只放客户常用参数和“开始测试 / 停止测试”：
     - MemTest：内存大小、循环次数、最长测试时间
     - H2wFlashTool：测试目录、容量、模式、循环次数、完成后删除，以及判定阈值 (最低写/读速度、寿命已用上限)
-    - H2wFlashTool 页顶部显示选中设备上报的 Flash 型号和固件版本 (字段见 docs/PROTOCOL.md 的 hello / device_info)
   - 其余一般保持默认的参数 (线程数、测试项、块大小、IO 方式、数据模式等) 收在每页的“高级设置…”里，
     预设保存/加载、导入/导出 JSON、恢复默认、单独下发到选中/全部设备、从设备读取也在那里
   - 参数界面由 JSON schema 自动生成，字段加 `"advanced": true` 即放进高级设置，字段与 Android 端不一致时只需改 JSON

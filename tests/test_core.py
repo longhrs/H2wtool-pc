@@ -377,7 +377,6 @@ def test_schema_advanced_split():
 
 
 def test_device_info_merge(hub):
-    assert [i["key"] for i in load_schemas()["h2wflashtool"].device_info] == ["flash_model", "flash_fw_version"]
     c = Client(hub.tcp_port)
     c.send(MsgType.HELLO, device_id="F1", model="X", tools=["h2wflashtool"], flash_model="KLUDG4UHDC")
     assert c.recv()["type"] == MsgType.WELCOME
@@ -386,3 +385,26 @@ def test_device_info_merge(hub):
     c.send(MsgType.STATUS, tool="h2wflashtool", state="running", device_info={"flash_model": "NEW"})
     dev = hub.devices()[0]
     assert wait_for(lambda: dev.info.get("flash_fw_version") == "0800" and dev.info.get("flash_model") == "NEW")
+    c.send(MsgType.RESULT, tool="h2wflashtool", test_id="t1", result="PASS")
+    assert wait_for(lambda: hub.store.query(tool="h2wflashtool"))
+    row = hub.store.query(tool="h2wflashtool")[0]
+    assert (row["flash_model"], row["flash_fw_version"]) == ("NEW", "0800")
+
+
+def test_result_store_adds_flash_columns_to_old_db(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.db"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE results (id INTEGER PRIMARY KEY AUTOINCREMENT, received_at REAL NOT NULL,"
+               " device_id TEXT NOT NULL, device_model TEXT NOT NULL DEFAULT '', transport TEXT NOT NULL DEFAULT '',"
+               " tool TEXT NOT NULL, test_id TEXT NOT NULL DEFAULT '', result TEXT NOT NULL,"
+               " start_time TEXT NOT NULL DEFAULT '', end_time TEXT NOT NULL DEFAULT '', duration_s REAL,"
+               " summary TEXT NOT NULL DEFAULT '{}', config TEXT NOT NULL DEFAULT '{}', raw TEXT NOT NULL DEFAULT '{}')")
+    db.execute("INSERT INTO results (received_at, device_id, tool, result) VALUES (1, 'D', 'memtest', 'PASS')")
+    db.commit()
+    db.close()
+    store = ResultStore(path)
+    assert store.query()[0]["flash_model"] == ""
+    store.add_from_message({"tool": "h2wflashtool", "result": "PASS"}, "D", flash_model="M")
+    assert store.query(text="M")[0]["flash_model"] == "M"
+    store.close()

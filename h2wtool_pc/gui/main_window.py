@@ -62,7 +62,6 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.logs, "日志")
         self.setCentralWidget(self.tabs)
         self.resizeDocks([dock], [520], Qt.Horizontal)
-        self.devices.selection_changed.connect(self._refresh_device_info)
 
         self._build_toolbar()
         self.status_server = QLabel()
@@ -251,10 +250,10 @@ class MainWindow(QMainWindow):
                 self._update_status()
         elif k in ("device_added", "device_updated"):
             self.devices.upsert(dev)
-            self._refresh_device_info()
+            self.results.board.upsert_device(dev)
         elif k == "device_removed":
             self.devices.remove(dev)
-            self._refresh_device_info()
+            self.results.board.device_offline(dev)
         elif k == "result":
             row = d["row"]
             self.results.add_result(row)
@@ -288,10 +287,6 @@ class MainWindow(QMainWindow):
                 self.log("error", f"{desc}: 设备拒绝 - {d.get('error')}", src)
         elif k == "file":
             self.log("info", f"收到文件 {d['path']} ({d['size']} 字节)", src)
-
-    def _refresh_device_info(self) -> None:
-        for p in self.config_panels.values():
-            p.refresh_device_info()
 
     def closeEvent(self, event) -> None:
         if self.adb_auto:

@@ -6,7 +6,6 @@ import json
 import time
 from typing import Callable
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGridLayout,
     QGroupBox,
@@ -222,7 +221,6 @@ class ConfigPanel(QWidget):
         self.log = log
         self._awaiting_report: dict[str, float] = {}  # 设备 key -> 请求时间
 
-        self.info_box, self.info_labels = self._build_device_info()
         self.main_form = ConfigForm(schema, advanced=False, description=schema.description)
         self.adv_form = ConfigForm(schema, advanced=True)
         self.adv_dialog = AdvancedDialog(self, self.adv_form, self)
@@ -248,43 +246,9 @@ class ConfigPanel(QWidget):
             row.addWidget(w)
 
         lay = QVBoxLayout(self)
-        if self.info_box:
-            lay.addWidget(self.info_box)
         lay.addWidget(scroll, 1)
         lay.addLayout(row)
         self.reload_presets()
-        self.refresh_device_info()
-
-    # ---------------------------------------------------------------- 设备信息
-    def _build_device_info(self) -> tuple[QGroupBox | None, dict[str, QLabel]]:
-        if not self.schema.device_info:
-            return None, {}
-        box = QGroupBox("设备信息")
-        form = QFormLayout(box)
-        labels = {}
-        for item in self.schema.device_info:
-            v = QLabel()
-            v.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            v.setStyleSheet("font-weight: bold;")
-            form.addRow(item["label"], v)
-            labels[item["key"]] = v
-        return box, labels
-
-    def refresh_device_info(self) -> None:
-        """显示选中设备 (未选中且只连一台时为该设备) 上报的信息。"""
-        if not self.info_box:
-            return
-        keys = self.target_keys(False)
-        dev = self.hub.device(keys[0]) if keys else None
-        if dev is None:
-            self.info_box.setTitle("设备信息 (未选择设备)")
-        elif len(keys) > 1:
-            self.info_box.setTitle(f"设备信息 ({dev.display_id}，共选中 {len(keys)} 台)")
-        else:
-            self.info_box.setTitle(f"设备信息 ({dev.display_id})")
-        for k, label in self.info_labels.items():
-            v = dev.info.get(k) if dev else None
-            label.setText(str(v) if v not in (None, "") else ("未上报" if dev else "-"))
 
     # 主界面 + 高级设置两张表单合起来就是完整参数
     def config(self) -> dict:

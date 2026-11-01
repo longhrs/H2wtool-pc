@@ -25,18 +25,23 @@ CREATE TABLE IF NOT EXISTS results (
     duration_s   REAL,
     summary      TEXT    NOT NULL DEFAULT '{}',
     config       TEXT    NOT NULL DEFAULT '{}',
-    raw          TEXT    NOT NULL DEFAULT '{}'
+    raw          TEXT    NOT NULL DEFAULT '{}',
+    flash_model      TEXT NOT NULL DEFAULT '',
+    flash_fw_version TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_results_device ON results(device_id);
 CREATE INDEX IF NOT EXISTS idx_results_tool ON results(tool);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_results_dedup ON results(device_id, tool, test_id) WHERE test_id <> '';
 """
 
+# 旧版数据库没有的列，打开时自动补上
+_ADDED_COLUMNS = {"flash_model": "TEXT NOT NULL DEFAULT ''", "flash_fw_version": "TEXT NOT NULL DEFAULT ''"}
+
 RESULT_VALUES = ("PASS", "FAIL", "ABORT", "ERROR")
 
 CSV_COLUMNS = [
-    "id", "received_at", "device_id", "device_model", "transport", "tool", "test_id",
-    "result", "start_time", "end_time", "duration_s", "summary", "config",
+    "id", "received_at", "device_id", "device_model", "flash_model", "flash_fw_version", "transport", "tool",
+    "test_id", "result", "start_time", "end_time", "duration_s", "summary", "config",
 ]
 
 
@@ -66,13 +71,18 @@ class ResultStore:
         self._lock = threading.Lock()
         with self._lock:
             self._db.executescript(_SCHEMA)
+            have = {r[1] for r in self._db.execute("PRAGMA table_info(results)")}
+            for col, decl in _ADDED_COLUMNS.items():
+                if col not in have:
+                    self._db.execute(f"ALTER TABLE results ADD COLUMN {col} {decl}")
             self._db.commit()
 
     def close(self) -> None:
         with self._lock:
             self._db.close()
 
-    def add_from_message(self, msg: dict, device_id: str, device_model: str = "", transport: str = "") -> tuple[int, bool]:
+    def add_from_message(self, msg: dict, device_id: str, device_model: str = "", transport: str = "",
+                         flash_model: str = "", flash_fw_version: str = "") -> tuple[int, bool]:
         """保存一条 result 消息。返回 (行 id, 是否新插入)。同一设备同一 test_id 重复上报视为重传，不重复插入。"""
         summary = msg.get("summary") or {}
         config = msg.get("config") or {}
@@ -86,13 +96,13 @@ class ResultStore:
             str(msg.get("test_id") or ""), normalize_result(msg.get("result")),
             _str_time(msg.get("start_time")), _str_time(msg.get("end_time")), duration,
             json.dumps(summary, ensure_ascii=False), json.dumps(config, ensure_ascii=False),
-            json.dumps(msg, ensure_ascii=False),
+            json.dumps(msg, ensure_ascii=False), str(flash_model or ""), str(flash_fw_version or ""),
         )
         with self._lock:
             cur = self._db.execute(
                 "INSERT OR IGNORE INTO results (received_at, device_id, device_model, transport, tool, test_id,"
-                " result, start_time, end_time, duration_s, summary, config, raw)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " result, start_time, end_time, duration_s, summary, config, raw, flash_model, flash_fw_version)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 row,
             )
             self._db.commit()
@@ -118,8 +128,9 @@ class ResultStore:
             sql += " AND result=?"
             args.append(result)
         if text:
-            sql += " AND (device_id LIKE ? OR device_model LIKE ? OR test_id LIKE ? OR summary LIKE ?)"
-            args += [f"%{text}%"] * 4
+            sql += (" AND (device_id LIKE ? OR device_model LIKE ? OR test_id LIKE ? OR summary LIKE ?"
+                    " OR flash_model LIKE ? OR flash_fw_version LIKE ?)")
+            args += [f"%{text}%"] * 6
         sql += " ORDER BY id DESC LIMIT ?"
         args.append(limit)
         with self._lock:

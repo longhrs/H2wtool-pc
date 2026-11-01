@@ -295,7 +295,8 @@ class Hub:
             raise ValueError("result 缺少 tool")
         self._merge_device_info(dev, msg)
         row_id, inserted = self.store.add_from_message(
-            msg, device_id=dev.device_id or dev.peer, device_model=dev.model, transport=dev.transport)
+            msg, device_id=dev.device_id or dev.peer, device_model=dev.model, transport=dev.transport,
+            flash_model=dev.info.get("flash_model", ""), flash_fw_version=dev.info.get("flash_fw_version", ""))
         self._reply(dev, protocol.make_ack(msg.get("id"), ok=True))
         if inserted:
             row = self.store.get(row_id)

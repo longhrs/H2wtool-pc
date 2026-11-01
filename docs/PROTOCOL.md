@@ -95,7 +95,7 @@ Android                                   PC
 ```
 `device_id` 用于区分设备，建议用序列号 (`Build.getSerial()` 或 adb serialno)。其它任意字段 (电量、SoC、内存/存储容量…) 都会被保存在设备信息里。
 
-H2wFlashTool 设备建议在 `hello` 里带上 `flash_model` (Flash 型号，如 eMMC `/sys/block/mmcblk0/device/name`) 和 `flash_fw_version` (Flash 固件版本，如 eMMC `fwrev`/UFS `rev`)，PC 的 H2wFlashTool 测试页顶部会显示选中设备的这两项。
+H2wFlashTool 设备建议在 `hello` 里带上 `flash_model` (Flash 型号，如 eMMC `/sys/block/mmcblk0/device/name`) 和 `flash_fw_version` (Flash 固件版本，如 eMMC `fwrev`/UFS `rev`)，PC 测试结果页的设备看板和结果列表会显示这两项，并随每条结果保存。
 
 ### device_info (可选，补充设备信息)
 ```json

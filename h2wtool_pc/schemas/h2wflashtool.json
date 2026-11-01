@@ -3,10 +3,6 @@
   "order": 20,
   "title": "H2wFlashTool 存储测试",
   "description": "下发给 Android 端 H2wFlashTool 的测试参数 (写满-校验方式的 Flash 容量/可靠性/速度测试)。字段可在用户数据目录 schemas/h2wflashtool.json 中覆盖定制。",
-  "device_info": [
-    {"key": "flash_model", "label": "Flash 型号"},
-    {"key": "flash_fw_version", "label": "固件版本"}
-  ],
   "fields": [
     {"key": "target_path", "label": "测试目录", "type": "string", "default": "/sdcard/h2w_test",
      "group": "测试范围", "help": "测试文件写入的目录"},

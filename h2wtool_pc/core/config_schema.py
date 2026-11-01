@@ -138,8 +138,6 @@ class ToolSchema:
     description: str = ""
     order: int = 100
     source: str = ""
-    # 测试页顶部只读显示的设备信息：[{"key": 设备 info 字段, "label": 显示名}]
-    device_info: list[dict] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, d: dict, source: str = "") -> "ToolSchema":
@@ -150,16 +148,8 @@ class ToolSchema:
         keys = [f.key for f in fields]
         if len(set(keys)) != len(keys):
             raise SchemaError(f"{tool}: 字段 key 重复")
-        device_info = []
-        for item in d.get("device_info", []):
-            if isinstance(item, str):
-                item = {"key": item}
-            if not isinstance(item, dict) or not item.get("key"):
-                raise SchemaError(f"{tool}: device_info 项缺少 key")
-            device_info.append({"key": str(item["key"]), "label": str(item.get("label", item["key"]))})
         return cls(tool=tool, title=d.get("title", tool), fields=fields,
-                   description=d.get("description", ""), order=int(d.get("order", 100)), source=source,
-                   device_info=device_info)
+                   description=d.get("description", ""), order=int(d.get("order", 100)), source=source)
 
     def field(self, key: str) -> Field | None:
         return next((f for f in self.fields if f.key == key), None)
