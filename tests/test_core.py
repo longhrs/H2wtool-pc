@@ -342,8 +342,11 @@ def test_mux_frame_decoder():
     out = []
     for i in range(0, len(stream), 3):
         out += d.feed(stream[i:i + 3])
-    assert out == [(1, b"hello"), (31, b""), (2, b"\xa5\x5aX")]
+    assert out == [(1, 0, b"hello"), (31, 7, b""), (2, 1, b"\xa5\x5aX")]
     assert d.bad_frames >= 1
+    # 长度字段离谱的假帧头不会让解码器干等
+    d2 = MuxFrameDecoder()
+    assert d2.feed(b"\xa5\x5a\x00\x00\xff\xff" + mux_frame(5, 0, b"ok")) == [(5, 0, b"ok")]
 
 
 def test_hub_serial_mux(hub):
@@ -358,14 +361,100 @@ def test_hub_serial_mux(hub):
     b = MEMTEST_UART.replace(b'"FAIL"', b'"PASS"')
     # 两路交错、每路的行被拆在多帧里
     for i in range(0, max(len(a), len(b)), 40):
-        reader.dispatch(mux_frame(0, i & 0xFF, a[i:i + 40]) + mux_frame(3, i & 0xFF, b[i:i + 40]))
+        reader.dispatch(mux_frame(0, i // 40 & 0xFF, a[i:i + 40]) + mux_frame(3, i // 40 & 0xFF, b[i:i + 40]))
     devs = sorted(d.peer for d in hub.devices())
     assert devs == ["COM7#ch0", "COM7#ch3"]
     rows = {r["device_id"]: r["result"] for r in hub.store.query()}
     assert rows == {"COM7#ch0": "FAIL", "COM7#ch3": "PASS"}
     assert all(d.transport == "usb-serial-mux" and d.passive for d in hub.devices())
+    assert reader.lost_frames == 0 and reader.frames > 0
+    # 序号跳了 3 帧 -> 丢帧计数 + 这一路的 warn 日志
+    last = (max(len(a), len(b)) - 1) // 40 & 0xFF
+    reader.dispatch(mux_frame(0, (last + 4) & 0xFF, b"x\n"))
+    assert reader.lost_frames == 3
+    assert any(e.kind == "log" and e.data["tool"] == "serialmux" and e.device.peer == "COM7#ch0"
+               for e in hub.events)
     reader.close()
     assert not hub.devices()
+
+
+def _mux_payload_stream():
+    a = MEMTEST_UART
+    return b"".join(mux_frame(2, i // 50 & 0xFF, a[i:i + 50]) for i in range(0, len(a), 50))
+
+
+def test_hub_mux_tcp_client_reconnects(hub):
+    """PC 连接汇聚器 (板子 = TCP 服务端)：收数据、断线后自动重连，设备名不变。"""
+    from h2wtool_pc.transport import serial_mux
+    serial_mux.RECONNECT_INTERVAL_S = 0.1
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+    client = hub.connect_mux_tcp("127.0.0.1", port)
+    try:
+        conn, _ = srv.accept()
+        conn.sendall(_mux_payload_stream())
+        assert wait_for(lambda: hub.store.query())
+        row = hub.store.query()[0]
+        assert row["device_id"] == f"127.0.0.1:{port}#ch2" and row["result"] == "FAIL"
+        assert hub.devices()[0].transport == "usb-adb-mux"
+        assert client.connected and client.channel_count == 1
+        conn.close()  # 汇聚器重启 -> 这一路下线
+        assert wait_for(lambda: not hub.devices())
+        conn, _ = srv.accept()  # 自动重连
+        conn.sendall(mux_frame(2, 9, b"after reconnect\n"))
+        assert wait_for(lambda: [d.peer for d in hub.devices()] == [f"127.0.0.1:{port}#ch2"])
+        assert client.lost_frames == 0  # 新连接的序号重新计
+        conn.close()
+    finally:
+        hub.close_mux(client)
+        srv.close()
+    assert hub.mux_sources() == []
+
+
+def test_hub_mux_tcp_listen(hub):
+    """汇聚器连 PC (板子 = TCP 客户端)：按来源 IP 命名，重连复用设备名。"""
+    server = hub.listen_mux_tcp("127.0.0.1", 0)
+    try:
+        s1 = socket.create_connection(("127.0.0.1", server.port))
+        s1.sendall(_mux_payload_stream())
+        assert wait_for(lambda: hub.store.query())
+        assert hub.store.query()[0]["device_id"] == "127.0.0.1#ch2"
+        assert wait_for(lambda: server.connected and server.channel_count == 1)
+        # 同一 IP 重连 (旧 socket 还没断)：旧连接被替换，设备名不变
+        s2 = socket.create_connection(("127.0.0.1", server.port))
+        s2.sendall(mux_frame(7, 0, b"hi\n"))
+        assert wait_for(lambda: sorted(d.peer for d in hub.devices()) == ["127.0.0.1#ch2", "127.0.0.1#ch7"])
+        s2.close()
+        assert wait_for(lambda: not hub.devices())
+        assert "等待" in server.state
+        s1.close()
+    finally:
+        hub.close_mux(server)
+
+
+def test_mux_configs_from_args():
+    from h2wtool_pc.__main__ import build_parser, mux_configs_from_args
+    from h2wtool_pc.core.mux import describe, parse_host_port
+    args = build_parser().parse_args(["--mux-tcp", "192.168.1.20", "--mux-tcp", "10.0.0.2:9100",
+                                      "--mux-listen", "9001", "--mux-adb", "--mux-adb", "ABC",
+                                      "--serial-mux", "COM5"])
+    cfgs = mux_configs_from_args(args, Settings())
+    assert [c["mode"] for c in cfgs] == ["serial", "tcp", "tcp", "listen", "adb", "adb"]
+    assert (cfgs[1]["host"], cfgs[1]["port"], cfgs[2]["port"]) == ("192.168.1.20", 9000, 9100)
+    assert [(c["adb_serial"], c["local_port"]) for c in cfgs[4:]] == [("", 9000), ("ABC", 9001)]
+    assert all(describe(c) for c in cfgs)
+    assert parse_host_port("[::1]:5") == ("::1", 5)
+
+
+def test_settings_mux_roundtrip(tmp_path):
+    s = Settings()
+    s.mux_last = {"mode": "tcp", "host": "1.2.3.4", "port": 9000}
+    s.mux_auto_connect = True
+    s.save(tmp_path / "s.json")
+    t = Settings.load(tmp_path / "s.json")
+    assert t.mux_last == s.mux_last and t.mux_auto_connect
 
 
 def test_schema_advanced_split():

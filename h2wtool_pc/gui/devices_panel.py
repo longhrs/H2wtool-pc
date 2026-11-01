@@ -6,6 +6,7 @@ import json
 import time
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QGroupBox, QHeaderView, QMenu, QMessageBox, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
@@ -13,7 +14,9 @@ from PySide6.QtWidgets import (
 
 from ..core.hub import Device, Hub
 
-TRANSPORT_NAMES = {"network": "网络", "usb-adb": "USB (adb)", "usb-serial": "USB 串口", "usb-serial-mux": "串口汇聚"}
+TRANSPORT_NAMES = {"network": "网络", "usb-adb": "USB (adb)", "usb-serial": "USB 串口", "usb-serial-mux": "汇聚器-串口",
+                   "network-mux": "汇聚器-网络", "usb-adb-mux": "汇聚器-USB(adb)"}
+MUX_COLUMNS = ["汇聚器", "方式", "状态", "路数", "帧数", "丢帧", "坏帧"]
 STATE_NAMES = {"idle": "空闲", "running": "运行中", "done": "完成", "error": "错误", "stopped": "已停止",
                "paused": "暂停"}
 
@@ -59,6 +62,19 @@ class DevicesPanel(QWidget):
         self.adb_table.horizontalHeader().setStretchLastSection(True)
         self.adb_table.setMaximumHeight(130)
 
+        self.mux_table = QTableWidget(0, len(MUX_COLUMNS))
+        self.mux_table.setHorizontalHeaderLabels(MUX_COLUMNS)
+        self.mux_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.mux_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.mux_table.verticalHeader().setVisible(False)
+        self.mux_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.mux_table.horizontalHeader().setStretchLastSection(True)
+        self.mux_table.setMaximumHeight(130)
+        self.mux_table.setToolTip("丢帧：汇聚器序号不连续 (输出队列满被丢弃)；坏帧：校验失败 (线路干扰)")
+        self.mux_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.mux_table.customContextMenuRequested.connect(self._mux_menu)
+        self._mux_rows: list = []
+
         g1 = QGroupBox("已连接设备 (可多选，作为参数/命令下发目标)")
         l1 = QVBoxLayout(g1)
         l1.addWidget(self.table)
@@ -68,7 +84,13 @@ class DevicesPanel(QWidget):
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
+        self.mux_group = QGroupBox("SerialMux 汇聚器 (每一路作为一台设备出现在上方列表)")
+        l3 = QVBoxLayout(self.mux_group)
+        l3.addWidget(self.mux_table)
+        self.mux_group.setVisible(False)
+
         lay.addWidget(g1, 1)
+        lay.addWidget(self.mux_group)
         lay.addWidget(g2)
 
     # ---------------------------------------------------------------- 行管理
@@ -103,6 +125,35 @@ class DevicesPanel(QWidget):
     def refresh_all(self) -> None:
         for d in self.hub.devices():
             self.upsert(d)
+        self.refresh_mux()
+
+    def refresh_mux(self) -> None:
+        sources = self.hub.mux_sources()
+        self._mux_rows = sources
+        self.mux_group.setVisible(bool(sources))
+        self.mux_table.setRowCount(len(sources))
+        for r, m in enumerate(sources):
+            values = [m.name, m.kind, m.state, str(m.channel_count), str(m.frames), str(m.lost_frames),
+                      str(m.bad_frames)]
+            for c, v in enumerate(values):
+                it = self.mux_table.item(r, c)
+                if it is None:
+                    it = QTableWidgetItem()
+                    self.mux_table.setItem(r, c, it)
+                it.setText(v)
+                if c == 2:
+                    it.setForeground(QBrush(QColor("#2e7d32" if m.connected else "#c62828")))
+                if c == 5:
+                    it.setForeground(QBrush(QColor("#c62828" if m.lost_frames else "#000000")))
+
+    def _mux_menu(self, pos) -> None:
+        rows = {i.row() for i in self.mux_table.selectionModel().selectedRows()}
+        sources = [self._mux_rows[r] for r in sorted(rows) if r < len(self._mux_rows)]
+        if not sources:
+            return
+        m = QMenu(self)
+        m.addAction("断开/关闭", lambda: ([self.hub.close_mux(s) for s in sources], self.refresh_mux()))
+        m.exec(self.mux_table.viewport().mapToGlobal(pos))
 
     def set_adb_devices(self, devices) -> None:
         self.adb_table.setRowCount(len(devices))

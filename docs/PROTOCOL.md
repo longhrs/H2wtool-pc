@@ -45,12 +45,29 @@ PC 端串口 (以及 SerialMux 汇聚口的每一路) 的处理规则：
   (往 bootloader 控制台写字节可能打断自动启动)。没有 `test_id` 的结果不去重，所以只读 stub 不要重发。
 - 没有 `device_id` 时用串口名 (如 `COM5`、`COM7#ch3`) 作为设备 ID。
 
-### 1.3 SerialMux 汇聚口
+### 1.3 SerialMux 汇聚器
 
-[longhrs/uart](https://github.com/longhrs/uart) 的 SerialMux 把最多 32 路 UART 打包到一个输出口，帧格式
-`A5 5A | 源端口 | 序号 | 长度(2, 大端) | payload | XOR 校验`。PC 端“打开串口”时勾选“SerialMux 汇聚口”
-(无界面模式 `--serial-mux COM7`)，每个源端口在收到第一帧时作为一台独立设备 (`COM7#ch<n>`) 出现，
-按上一节的规则处理。汇聚口是单向的，PC 不回发数据。
+[longhrs/uart](https://github.com/longhrs/uart) 的 SerialMux App 把最多 32 路 UART (`/dev/ttyS0..31`) 打包成帧，
+帧格式 `A5 5A | 源端口 | 序号 (每个源端口各自 0..255 循环) | 长度(2, 大端) | payload | XOR 校验`，
+同时转发到下面任意几种输出 (字节流完全相同)。PC 端点工具栏“连接汇聚器”选择对应方式：
+
+| 汇聚器输出 | PC 端选择 | 设备名 | 无界面模式 |
+|---|---|---|---|
+| 硬件串口 `/dev/ttyS32` | 串口 (或“打开串口”勾选汇聚器) | `COM7#ch<n>` | `--serial-mux COM7` |
+| USB 虚拟串口 `/dev/ttyGS0` (gadget ACM)，PC 上显示为 “USB 串行设备 (COMx)” | 串口 | `COM9#ch<n>` | `--serial-mux COM9` |
+| 网络 TCP 服务端 (默认端口 9000) | 网络：PC 连接汇聚器，填汇聚器界面上显示的 IP | `192.168.1.20:9000#ch<n>` | `--mux-tcp 192.168.1.20` |
+| 网络 TCP 客户端 (汇聚器连 PC) | 网络：等待汇聚器连接，汇聚器里填 PC 的 IP 和端口 | `<汇聚器IP>#ch<n>` | `--mux-listen 9000` |
+| TCP 服务端 + USB 线 (板子没有 gadget 时) | USB 线：adb forward，工具自动执行 `adb forward tcp:9000 tcp:9000` | `127.0.0.1:9000#ch<n>` | `--mux-adb [序列号]` |
+
+- 每个源端口在收到第一帧时作为一台独立的只读设备出现，按上一节的规则处理 (控制台文本 + `@H2W` 行)。
+  汇聚器是单向的，PC 不回发数据。
+- 网络方式断线后自动重连 (PC 连汇聚器：每 3 秒重试；adb 方式每次重连前重建 forward，拔插 USB 后自动恢复)。
+  断线期间这些设备在看板上显示离线，重连后收到数据自动上线，设备名不变。
+- 汇聚器的 TCP 服务端最多同时接 4 个客户端，超出时踢掉最早的连接，不要在多台 PC 上同时连同一台汇聚器。
+- 序号不连续时记为丢帧 (汇聚器输出队列满时丢最旧的帧)，在该路设备的日志里给出 warn，并在“SerialMux 汇聚器”
+  列表里统计；校验失败的帧计为坏帧并重新同步。
+- 设置会记住上次的连接方式，勾选“下次启动时自动连接”后，工具启动即自动连接。
+- `tools/serialmux_simulator.py` 可以在没有硬件时模拟汇聚器 (TCP 服务端或客户端)。
 
 ## 2. 帧格式 (JSON Lines)
 

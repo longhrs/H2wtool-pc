@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from ..core.hub import Device
 from ..core.result_store import RESULT_VALUES, ResultStore
-from .devices_panel import status_text
+from .devices_panel import TRANSPORT_NAMES, status_text
 
 COLUMNS = ["ID", "接收时间", "设备ID", "型号", "Flash 型号", "固件版本", "连接", "工具", "测试ID", "结果", "耗时(s)", "摘要"]
 RESULT_COL = COLUMNS.index("结果")
@@ -288,7 +288,7 @@ class ResultsPanel(QWidget):
         values = [
             row["id"], time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["received_at"])),
             row["device_id"], row["device_model"], row.get("flash_model", ""), row.get("flash_fw_version", ""),
-            row["transport"], row["tool"], row["test_id"],
+            TRANSPORT_NAMES.get(row["transport"], row["transport"]), row["tool"], row["test_id"],
             row["result"], "" if row["duration_s"] is None else round(row["duration_s"], 1),
             summary_text(row["summary"]),
         ]

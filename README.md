@@ -9,7 +9,9 @@ memtest、H2wFlashTool 的测试结果，并可以在 PC 上设置这两个工�
   - 网络：TCP 服务 (默认端口 9527)，支持 UDP 广播自动发现 PC (端口 9528)
   - USB (adb)：自动检测 USB 连接的手机并执行 `adb reverse`，手机连 `127.0.0.1:9527` 即可
   - USB 串口：CDC-ACM / gadget serial / USB 转串口；也可直接接 bootloader 控制台 (如 LK 里的 DDR memtest，只读)
-  - SerialMux 汇聚口：一个串口收多块板子的 UART，按源端口拆成多台设备
+  - SerialMux 汇聚器 (longhrs/uart)：一台板子收最多 32 路 UART，PC 通过网络 (PC 连汇聚器 / 汇聚器连 PC)、
+    USB 虚拟串口、USB 线 adb forward 或硬件串口接收，按源端口拆成多台设备进入设备列表和看板；断线自动重连，
+    统计丢帧/坏帧。工具栏“连接汇聚器”，详见 docs/PROTOCOL.md 1.3；没有硬件可用 `tools/serialmux_simulator.py` 试
   - 支持多台设备同时连接
 - **测试结果**
   - 设备看板：一页 16 格，每台设备一格，显示 Flash 型号、固件版本、当前状态和最近一次结果 (PASS/FAIL 着色)，超过 16 台翻页
