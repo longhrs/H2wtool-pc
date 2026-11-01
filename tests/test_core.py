@@ -374,3 +374,15 @@ def test_schema_advanced_split():
     assert {"target_path", "min_write_mbps", "min_read_mbps", "max_life_used_percent"} <= main
     assert s.field("io_mode").advanced and not s.field("loops").advanced
     assert s.defaults()["max_life_used_percent"] == 0
+
+
+def test_device_info_merge(hub):
+    assert [i["key"] for i in load_schemas()["h2wflashtool"].device_info] == ["flash_model", "flash_fw_version"]
+    c = Client(hub.tcp_port)
+    c.send(MsgType.HELLO, device_id="F1", model="X", tools=["h2wflashtool"], flash_model="KLUDG4UHDC")
+    assert c.recv()["type"] == MsgType.WELCOME
+    assert wait_for(lambda: hub.devices() and hub.devices()[0].info.get("flash_model") == "KLUDG4UHDC")
+    c.send(MsgType.DEVICE_INFO, flash_fw_version="0800")
+    c.send(MsgType.STATUS, tool="h2wflashtool", state="running", device_info={"flash_model": "NEW"})
+    dev = hub.devices()[0]
+    assert wait_for(lambda: dev.info.get("flash_fw_version") == "0800" and dev.info.get("flash_model") == "NEW")

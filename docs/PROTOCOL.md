@@ -95,6 +95,14 @@ Android                                   PC
 ```
 `device_id` 用于区分设备，建议用序列号 (`Build.getSerial()` 或 adb serialno)。其它任意字段 (电量、SoC、内存/存储容量…) 都会被保存在设备信息里。
 
+H2wFlashTool 设备建议在 `hello` 里带上 `flash_model` (Flash 型号，如 eMMC `/sys/block/mmcblk0/device/name`) 和 `flash_fw_version` (Flash 固件版本，如 eMMC `fwrev`/UFS `rev`)，PC 的 H2wFlashTool 测试页顶部会显示选中设备的这两项。
+
+### device_info (可选，补充设备信息)
+```json
+{"type":"device_info","id":"...","ts":...,"flash_model":"KLUDG4UHDC-B0E1","flash_fw_version":"0800"}
+```
+握手后才读到的信息可以用这条消息补发，字段合并进设备信息。`status` / `result` 里也可以带一个 `"device_info": {...}` 对象，效果相同。
+
 ### heartbeat
 ```json
 {"type":"heartbeat","id":"...","ts":...}

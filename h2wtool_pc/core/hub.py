@@ -262,6 +262,16 @@ class Hub:
         self.info(f"设备握手 {dev.device_id} {dev.model} Android {dev.android_version} [{dev.transport}]")
         self._emit("device_updated", dev)
 
+    def _on_device_info(self, dev: Device, msg: dict) -> None:
+        dev.info.update({k: v for k, v in msg.items() if k not in ("type", "id", "ts")})
+        self._emit("device_updated", dev)
+
+    def _merge_device_info(self, dev: Device, msg: dict) -> None:
+        # status / result 也可以顺带一个 "device_info" 对象 (测试开始后才读到的器件信息)
+        extra = msg.get("device_info")
+        if isinstance(extra, dict):
+            dev.info.update(extra)
+
     def _on_heartbeat(self, dev: Device, msg: dict) -> None:
         self._emit("device_updated", dev)
 
@@ -269,6 +279,7 @@ class Hub:
         tool = str(msg.get("tool") or "")
         prev_state = dev.status.get(tool, {}).get("state")
         dev.status[tool] = msg
+        self._merge_device_info(dev, msg)
         self._emit("status", dev, tool=tool, msg=msg, prev_state=prev_state)
         self._emit("device_updated", dev)
 
@@ -282,6 +293,7 @@ class Hub:
     def _on_result(self, dev: Device, msg: dict) -> None:
         if not msg.get("tool"):
             raise ValueError("result 缺少 tool")
+        self._merge_device_info(dev, msg)
         row_id, inserted = self.store.add_from_message(
             msg, device_id=dev.device_id or dev.peer, device_model=dev.model, transport=dev.transport)
         self._reply(dev, protocol.make_ack(msg.get("id"), ok=True))
@@ -292,6 +304,8 @@ class Hub:
             self._emit("result", dev, row=row)
         else:
             self.info(f"{dev.display_id} 重复上报结果 test_id={msg.get('test_id')}，已忽略")
+        if isinstance(msg.get("device_info"), dict):
+            self._emit("device_updated", dev)
 
     def _on_config_report(self, dev: Device, msg: dict) -> None:
         tool = str(msg.get("tool") or "")

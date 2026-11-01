@@ -34,6 +34,7 @@ class MsgType:
     RESULT = "result"
     LOG = "log"
     CONFIG_REPORT = "config_report"
+    DEVICE_INFO = "device_info"  # 补充/更新设备信息 (如 Flash 型号、固件版本)
     FILE = "file"
     # PC -> Android
     WELCOME = "welcome"
