@@ -72,6 +72,11 @@ class Adb:
     def reverse(self, serial: str, port: int) -> None:
         self._run("-s", serial, "reverse", f"tcp:{port}", f"tcp:{port}")
 
+    def forward(self, serial: str, local_port: int, remote_port: int) -> None:
+        """PC 的 127.0.0.1:local_port -> 设备上的 remote_port (设备当 TCP 服务端，PC 去连)。"""
+        sel = ("-s", serial) if serial else ()
+        self._run(*sel, "forward", f"tcp:{local_port}", f"tcp:{remote_port}")
+
     def reverse_list(self, serial: str) -> str:
         return self._run("-s", serial, "reverse", "--list")
 

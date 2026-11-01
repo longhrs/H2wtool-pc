@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from .. import protocol
@@ -32,6 +32,9 @@ class Settings:
     heartbeat_timeout_s: int = 30  # 超过该时间无任何数据则断开，0 = 不检测
     serial_baudrate: int = 115200
     auto_start_server: bool = True
+    # SerialMux 汇聚器：上次的连接参数 (连接汇聚器对话框的默认值)，以及启动时是否自动重连
+    mux_last: dict = field(default_factory=dict)
+    mux_auto_connect: bool = False
 
     @classmethod
     def load(cls, path: Path) -> "Settings":

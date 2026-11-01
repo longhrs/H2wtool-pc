@@ -13,12 +13,13 @@ from .. import __version__, protocol
 from ..core.adb import Adb, AdbAutoReverse
 from ..core.config_schema import PresetStore, ToolSchema
 from ..core.hub import Event, Hub
+from ..core.mux import describe as mux_describe, open_mux_source
 from ..core.netutil import local_ipv4_addresses
 from ..core.settings import Settings
 from .bridge import EventBridge
 from .config_panel import ConfigPanel
 from .devices_panel import DevicesPanel
-from .dialogs import SerialDialog, SettingsDialog
+from .dialogs import MuxDialog, SerialDialog, SettingsDialog
 from .log_panel import LogPanel
 from .results_panel import ResultsPanel
 
@@ -90,6 +91,10 @@ class MainWindow(QMainWindow):
         act_serial = QAction("打开串口", self)
         act_serial.triggered.connect(self.open_serial)
         tb.addAction(act_serial)
+        act_mux = QAction("连接汇聚器", self)
+        act_mux.setToolTip("SerialMux 汇聚器 (32 路 UART 汇成一路)：网络 / USB / 串口")
+        act_mux.triggered.connect(self.open_mux)
+        tb.addAction(act_mux)
         act_help = QAction("连接说明", self)
         act_help.triggered.connect(self.show_help)
         tb.addAction(act_help)
@@ -173,6 +178,43 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "打开串口失败", f"{port}: {e}")
 
+    def _open_mux_cfg(self, cfg: dict) -> bool:
+        try:
+            open_mux_source(self.hub, cfg, self.adb,
+                            lambda text: self.bridge.on_adb_event("error", text, None))
+        except Exception as e:
+            self.log("error", f"连接汇聚器 {mux_describe(cfg)} 失败: {e}")
+            QMessageBox.critical(self, "连接汇聚器失败", f"{mux_describe(cfg)}\n{e}")
+            return False
+        self.devices.refresh_mux()
+        return True
+
+    def open_mux(self) -> None:
+        try:
+            adb_devices = self.adb.devices() if self.adb.path else []
+        except Exception:
+            adb_devices = []
+        dlg = MuxDialog(self.settings.mux_last, self.settings.serial_baudrate, adb_devices,
+                        local_ipv4_addresses(), self.settings.mux_auto_connect, self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        cfg = dlg.config()
+        if self._open_mux_cfg(cfg):
+            self.settings.mux_last = cfg
+            self.settings.mux_auto_connect = dlg.auto_connect()
+            self.settings.save(self.data_dir / "settings.json")
+
+    def auto_connect_mux(self) -> None:
+        """启动时按上次的参数连接汇聚器 (在“连接汇聚器”对话框里勾选了自动连接时)。"""
+        cfg = self.settings.mux_last
+        if not (self.settings.mux_auto_connect and cfg):
+            return
+        try:
+            open_mux_source(self.hub, cfg, self.adb, lambda text: self.bridge.on_adb_event("error", text, None))
+        except Exception as e:
+            self.log("error", f"自动连接汇聚器 {mux_describe(cfg)} 失败: {e}")
+        self.devices.refresh_mux()
+
     def _apply_adb_auto(self) -> None:
         if self.adb_auto:
             self.adb_auto.stop()
@@ -230,6 +272,9 @@ class MainWindow(QMainWindow):
             f"2. USB (adb)：手机开启 USB 调试并连接 PC，本工具会自动执行\n"
             f"   adb reverse tcp:{port} tcp:{port}，手机端连接 127.0.0.1:{port} 即可。\n\n"
             f"3. USB 串口 (CDC/gadget serial)：点击“打开串口”选择端口。\n\n"
+            f"SerialMux 汇聚器 (一台板子收 32 路 UART)：点击“连接汇聚器”，可选\n"
+            f"   网络 (PC 连汇聚器的 9000 端口，或汇聚器连 PC)、USB 线 (adb forward)、\n"
+            f"   USB 虚拟串口 / 硬件串口。每一路 UART 作为一台设备 (<来源>#ch<n>) 显示。\n\n"
             f"协议详情见 docs/PROTOCOL.md。"
         ))
 

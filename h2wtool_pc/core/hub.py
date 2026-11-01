@@ -16,7 +16,9 @@ from typing import Any, Callable
 
 from .. import __version__, protocol
 from ..protocol import MsgType
-from ..transport import DiscoveryResponder, Link, SerialLink, SerialMuxReader, TcpServer
+from ..transport import (
+    DEFAULT_MUX_TCP_PORT, DiscoveryResponder, Link, SerialLink, SerialMuxReader, TcpMuxClient, TcpMuxServer, TcpServer,
+)
 from .config_schema import ToolSchema, safe_filename
 from .result_store import ResultStore
 
@@ -85,7 +87,7 @@ class Hub:
         self.heartbeat_timeout_s = 30
         self._watchdog_stop = threading.Event()
         self._watchdog: threading.Thread | None = None
-        self._mux_readers: list[SerialMuxReader] = []
+        self._mux_readers: list = []  # SerialMuxReader / TcpMuxClient / TcpMuxServer
 
     # ------------------------------------------------------------------ 监听
     def add_listener(self, fn: Listener) -> None:
@@ -153,14 +155,50 @@ class Hub:
         """打开 SerialMux 汇聚口，每个源端口在收到第一帧时作为一台设备出现。"""
         reader = SerialMuxReader(self, port, baudrate)
         reader.start()
-        self._mux_readers.append(reader)
+        self._add_mux(reader)
         self.info(f"已打开汇聚串口 {port}")
         return reader
+
+    def connect_mux_tcp(self, host: str, port: int = DEFAULT_MUX_TCP_PORT,
+                        prepare: Callable[[], None] | None = None) -> TcpMuxClient:
+        """PC 主动连接 SerialMux 汇聚器的 TCP 服务端 (断线自动重连)。host=127.0.0.1 配合 adb forward 走 USB 线。"""
+        for r in self.mux_sources():
+            if isinstance(r, TcpMuxClient) and (r.host, r.port) == (host, port):
+                raise ValueError(f"已经在连接 {host}:{port}")
+        client = TcpMuxClient(self, host, port, prepare=prepare)
+        client.start()
+        self._add_mux(client)
+        self.info(f"开始连接汇聚器 {host}:{port}")
+        self._start_watchdog()
+        return client
+
+    def listen_mux_tcp(self, host: str = "0.0.0.0", port: int = DEFAULT_MUX_TCP_PORT) -> TcpMuxServer:
+        """在 PC 上监听端口，等待 SerialMux 汇聚器 (TCP 客户端模式) 连进来。"""
+        server = TcpMuxServer(self, host, port)
+        server.start()
+        self._add_mux(server)
+        self.info(f"等待汇聚器连接 {host}:{server.port}")
+        return server
+
+    def _add_mux(self, reader) -> None:
+        with self._lock:
+            self._mux_readers = [r for r in self._mux_readers if not r.closed] + [reader]
+
+    def mux_sources(self) -> list:
+        with self._lock:
+            return [r for r in self._mux_readers if not r.closed]
+
+    def close_mux(self, reader) -> None:
+        reader.close()
+        with self._lock:
+            if reader in self._mux_readers:
+                self._mux_readers.remove(reader)
+        self.info(f"已关闭汇聚器 {reader.name}")
 
     def shutdown(self) -> None:
         self._watchdog_stop.set()
         self.stop_server()
-        for r in self._mux_readers:
+        for r in list(self._mux_readers):
             r.close()
         self._mux_readers.clear()
         for d in self.devices():

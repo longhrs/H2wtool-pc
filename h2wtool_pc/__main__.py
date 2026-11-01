@@ -13,6 +13,7 @@ import threading
 from pathlib import Path
 
 from . import __version__
+from .core.mux import mux_configs_from_args, open_mux_args  # noqa: F401  (mux_configs_from_args 供测试用)
 from .core.settings import Settings, default_data_dir
 
 
@@ -26,7 +27,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-adb", action="store_true", help="无界面模式下不自动执行 adb reverse")
     p.add_argument("--serial", action="append", default=[], help="无界面模式下打开串口，可多次指定")
     p.add_argument("--serial-mux", action="append", default=[],
-                   help="打开 SerialMux 汇聚串口 (每个源端口作为一台设备)，可多次指定")
+                   help="打开 SerialMux 汇聚串口 (硬件串口或 USB 虚拟串口，每个源端口作为一台设备)，可多次指定")
+    p.add_argument("--mux-tcp", action="append", default=[], metavar="HOST[:PORT]",
+                   help="连接 SerialMux 汇聚器的 TCP 服务端 (默认端口 9000，断线自动重连)，可多次指定")
+    p.add_argument("--mux-listen", action="append", default=[], type=int, metavar="PORT",
+                   help="监听端口，等待 SerialMux 汇聚器 (TCP 客户端模式) 连进来，可多次指定")
+    p.add_argument("--mux-adb", action="append", default=[], nargs="?", const="", metavar="SERIAL",
+                   help="通过 USB 线 adb forward tcp:9000 连接汇聚器；有多台 adb 设备时给出序列号")
     p.add_argument("-v", "--verbose", action="store_true")
     return p
 
@@ -68,11 +75,7 @@ def run_headless(args, data_dir: Path, settings: Settings) -> int:
             hub.open_serial(port, settings.serial_baudrate)
         except Exception as e:
             print(f"[error] 打开串口 {port} 失败: {e}", flush=True)
-    for port in args.serial_mux:
-        try:
-            hub.open_serial_mux(port, settings.serial_baudrate)
-        except Exception as e:
-            print(f"[error] 打开汇聚串口 {port} 失败: {e}", flush=True)
+    open_mux_args(hub, args, settings, lambda text: print(f"[error] {text}", flush=True))
 
     auto = None
     if settings.adb_auto_reverse and not args.no_adb:
