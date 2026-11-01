@@ -12,16 +12,20 @@ memtest、H2wFlashTool 的测试结果，并可以在 PC 上设置这两个工�
   - SerialMux 汇聚口：一个串口收多块板子的 UART，按源端口拆成多台设备
   - 支持多台设备同时连接
 - **测试结果**
+  - 设备看板：一页 16 格，每台设备一格，显示 Flash 型号、固件版本、当前状态和最近一次结果 (PASS/FAIL 着色)，超过 16 台翻页
+  - 结果列表同样带 Flash 型号、固件版本列 (字段见 docs/PROTOCOL.md 的 hello / device_info)，可搜索、导出 CSV
   - 实时接收，保存到本地 SQLite 数据库；同一测试重复上报自动去重 (设备可放心重发)
   - 按工具 / 设备 / 结果 / 关键字过滤，PASS/FAIL 着色统计，查看完整原始数据
   - 导出 CSV (Excel 可直接打开)
   - 设备日志按设备按天落盘，设备上传的文件自动保存
 - **参数设置**
-  - MemTest：内存大小、线程数、循环次数、时长、测试项选择等
-  - H2wFlashTool：测试目录、容量、文件大小、块大小、模式、IO 方式、数据模式等
-  - 参数界面由 JSON schema 自动生成，字段与 Android 端不一致时只需改 JSON
-  - 参数预设保存/加载，导入/导出 JSON
-  - 下发到选中设备 / 全部设备，从设备读取当前参数，下发并开始测试，停止测试
+  - 测试页只放客户常用参数和“开始测试 / 停止测试”：
+    - MemTest：内存大小、循环次数、最长测试时间
+    - H2wFlashTool：测试目录、容量、模式、循环次数、完成后删除，以及判定阈值 (最低写/读速度、寿命已用上限)
+  - 其余一般保持默认的参数 (线程数、测试项、块大小、IO 方式、数据模式等) 收在每页的“高级设置…”里，
+    预设保存/加载、导入/导出 JSON、恢复默认、单独下发到选中/全部设备、从设备读取也在那里
+  - 参数界面由 JSON schema 自动生成，字段加 `"advanced": true` 即放进高级设置，字段与 Android 端不一致时只需改 JSON
+  - 服务启停、adb 端口映射、监听端口/心跳/adb 路径等网络设置在工具栏“高级”菜单里
 - **无界面模式**：`--headless` 只做结果接收与保存，适合产线工位长期运行
 
 ## Windows 安装包
@@ -50,11 +54,11 @@ memtest、H2wFlashTool 的测试结果，并可以在 PC 上设置这两个工�
 2. 开始菜单 → H2wTool PC → **Device Simulator (memtest x3)**：
    左侧出现模拟设备，“测试结果”页陆续出现 3 条 memtest 结果 (含 PASS/FAIL)。
 3. 开始菜单 → **Device Simulator (wait for commands)**，在左侧选中该设备：
-   - “MemTest 设置”页改几个参数 → “下发并开始测试”，日志页显示“设备已确认”，随后出现新结果；
+   - “MemTest 内存测试”页改几个参数 → “开始测试”，日志页显示“设备已确认”，随后出现新结果；
    - “从设备读取”，表单变为设备上的参数；
    - “测试结果”页 → “导出 CSV”，用 Excel 打开。
 4. 真机 USB 验证：手机开 USB 调试并连接，把 [platform-tools](https://developer.android.com/tools/releases/platform-tools)
-   解压到安装目录 (得到 `安装目录\platform-tools\adb.exe`)，或在“设置”中指定 adb 路径；
+   解压到安装目录 (得到 `安装目录\platform-tools\adb.exe`)，或在“高级 → 高级设置”中指定 adb 路径；
    左下“USB adb 设备”列表出现手机即表示 `adb reverse` 已自动建立。
 
 ## 从源码运行
@@ -69,7 +73,7 @@ python -m h2wtool_pc --help
 ```
 
 USB (adb) 方式需要安装 [Android platform-tools](https://developer.android.com/tools/releases/platform-tools)，
-并让 `adb` 在 PATH 中 (或在“设置”里指定 adb 路径)，手机需开启 USB 调试。
+并让 `adb` 在 PATH 中 (或在“高级 → 高级设置”里指定 adb 路径)，手机需开启 USB 调试。
 
 ### 手动打包
 
@@ -89,7 +93,7 @@ adb 查找顺序：设置中指定的路径 → 程序目录下 `platform-tools\
    - 网络：手机 App 连接状态栏显示的 PC IP:9527，或用 UDP 发现；
    - 串口：工具栏“打开串口”。
 3. 设备握手后出现在左侧“已连接设备”列表。
-4. 在“MemTest 设置 / H2wFlashTool 设置”页调整参数，选中设备后点“下发到选中设备”或“下发并开始测试”。
+4. 在“MemTest / H2wFlashTool”测试页调整参数，选中设备后点“开始测试” (不常用的参数在“高级设置…”里)。
 5. 测试结束后结果出现在“测试结果”页，可过滤、查看详情、导出 CSV。
 
 ## 数据目录

@@ -12,7 +12,7 @@ from ..transport import list_serial_ports, serial_available
 class SettingsDialog(QDialog):
     def __init__(self, settings: Settings, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("设置")
+        self.setWindowTitle("高级设置")
         s = settings
         self.host = QLineEdit(s.bind_host)
         self.port = QSpinBox()

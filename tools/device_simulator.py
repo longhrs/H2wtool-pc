@@ -68,7 +68,7 @@ class SimDevice:
     def run(self, auto_tool: str | None, count: int) -> None:
         self.send(MsgType.HELLO, device_id=self.device_id, model=self.model, android_version="14",
                   app_version="sim-1.0", tools=list(self.configs), serial_no=self.device_id,
-                  battery=87)
+                  battery=87, flash_model="KLUDG4UHDC-B0E1", flash_fw_version="0800")
         threading.Thread(target=self._heartbeat, daemon=True).start()
         if auto_tool:
             threading.Thread(target=self._auto, args=(auto_tool, count), daemon=True).start()

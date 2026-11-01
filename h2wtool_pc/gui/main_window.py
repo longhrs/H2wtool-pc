@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import (
-    QDialog, QDockWidget, QLabel, QMainWindow, QMessageBox, QSystemTrayIcon, QTabWidget,
+    QDialog, QDockWidget, QLabel, QMainWindow, QMenu, QMessageBox, QSystemTrayIcon, QTabWidget, QToolButton,
 )
 
 from .. import __version__, protocol
@@ -57,7 +57,7 @@ class MainWindow(QMainWindow):
         for tool, schema in schemas.items():
             p = ConfigPanel(schema, hub, presets, self.devices.target_keys, self.log)
             self.config_panels[tool] = p
-            self.tabs.addTab(p, f"{schema.title} 设置")
+            self.tabs.addTab(p, schema.title)
         self.logs = LogPanel()
         self.tabs.addTab(self.logs, "日志")
         self.setCentralWidget(self.tabs)
@@ -83,29 +83,40 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- UI
     def _build_toolbar(self) -> None:
+        # 工具栏只放客户日常用到的操作，服务/adb/网络等保持默认的收进“高级”菜单
         tb = self.addToolBar("main")
         tb.setObjectName("main_toolbar")
         tb.setMovable(False)
-        self.act_server = QAction("启动服务", self)
-        self.act_server.triggered.connect(self.toggle_server)
-        tb.addAction(self.act_server)
         act_serial = QAction("打开串口", self)
         act_serial.triggered.connect(self.open_serial)
         tb.addAction(act_serial)
-        act_adb = QAction("adb 端口映射", self)
-        act_adb.setToolTip("立即扫描 USB 设备并执行 adb reverse")
-        act_adb.triggered.connect(self.adb_reverse_now)
-        tb.addAction(act_adb)
-        tb.addSeparator()
-        act_settings = QAction("设置", self)
-        act_settings.triggered.connect(self.open_settings)
-        tb.addAction(act_settings)
-        act_dir = QAction("打开数据目录", self)
-        act_dir.triggered.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.data_dir))))
-        tb.addAction(act_dir)
         act_help = QAction("连接说明", self)
         act_help.triggered.connect(self.show_help)
         tb.addAction(act_help)
+        tb.addSeparator()
+
+        menu = QMenu(self)
+        act_settings = QAction("高级设置…", self)
+        act_settings.setToolTip("监听地址/端口、局域网发现、心跳超时、adb 路径、默认波特率")
+        act_settings.triggered.connect(self.open_settings)
+        menu.addAction(act_settings)
+        menu.addSeparator()
+        self.act_server = QAction("启动服务", self)
+        self.act_server.triggered.connect(self.toggle_server)
+        menu.addAction(self.act_server)
+        act_adb = QAction("adb 端口映射", self)
+        act_adb.setToolTip("立即扫描 USB 设备并执行 adb reverse")
+        act_adb.triggered.connect(self.adb_reverse_now)
+        menu.addAction(act_adb)
+        act_dir = QAction("打开数据目录", self)
+        act_dir.triggered.connect(lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.data_dir))))
+        menu.addAction(act_dir)
+        menu.setToolTipsVisible(True)
+        adv = QToolButton()
+        adv.setText("高级")
+        adv.setMenu(menu)
+        adv.setPopupMode(QToolButton.InstantPopup)
+        tb.addWidget(adv)
 
     def log(self, level: str, text: str, source: str = "") -> None:
         self.logs.append(level, text, source)
@@ -239,8 +250,10 @@ class MainWindow(QMainWindow):
                 self._update_status()
         elif k in ("device_added", "device_updated"):
             self.devices.upsert(dev)
+            self.results.board.upsert_device(dev)
         elif k == "device_removed":
             self.devices.remove(dev)
+            self.results.board.device_offline(dev)
         elif k == "result":
             row = d["row"]
             self.results.add_result(row)

@@ -366,3 +366,45 @@ def test_hub_serial_mux(hub):
     assert all(d.transport == "usb-serial-mux" and d.passive for d in hub.devices())
     reader.close()
     assert not hub.devices()
+
+
+def test_schema_advanced_split():
+    s = load_schemas()["h2wflashtool"]
+    main = {f.key for f in s.fields if not f.advanced}
+    assert {"target_path", "min_write_mbps", "min_read_mbps", "max_life_used_percent"} <= main
+    assert s.field("io_mode").advanced and not s.field("loops").advanced
+    assert s.defaults()["max_life_used_percent"] == 0
+
+
+def test_device_info_merge(hub):
+    c = Client(hub.tcp_port)
+    c.send(MsgType.HELLO, device_id="F1", model="X", tools=["h2wflashtool"], flash_model="KLUDG4UHDC")
+    assert c.recv()["type"] == MsgType.WELCOME
+    assert wait_for(lambda: hub.devices() and hub.devices()[0].info.get("flash_model") == "KLUDG4UHDC")
+    c.send(MsgType.DEVICE_INFO, flash_fw_version="0800")
+    c.send(MsgType.STATUS, tool="h2wflashtool", state="running", device_info={"flash_model": "NEW"})
+    dev = hub.devices()[0]
+    assert wait_for(lambda: dev.info.get("flash_fw_version") == "0800" and dev.info.get("flash_model") == "NEW")
+    c.send(MsgType.RESULT, tool="h2wflashtool", test_id="t1", result="PASS")
+    assert wait_for(lambda: hub.store.query(tool="h2wflashtool"))
+    row = hub.store.query(tool="h2wflashtool")[0]
+    assert (row["flash_model"], row["flash_fw_version"]) == ("NEW", "0800")
+
+
+def test_result_store_adds_flash_columns_to_old_db(tmp_path):
+    import sqlite3
+    path = tmp_path / "old.db"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE results (id INTEGER PRIMARY KEY AUTOINCREMENT, received_at REAL NOT NULL,"
+               " device_id TEXT NOT NULL, device_model TEXT NOT NULL DEFAULT '', transport TEXT NOT NULL DEFAULT '',"
+               " tool TEXT NOT NULL, test_id TEXT NOT NULL DEFAULT '', result TEXT NOT NULL,"
+               " start_time TEXT NOT NULL DEFAULT '', end_time TEXT NOT NULL DEFAULT '', duration_s REAL,"
+               " summary TEXT NOT NULL DEFAULT '{}', config TEXT NOT NULL DEFAULT '{}', raw TEXT NOT NULL DEFAULT '{}')")
+    db.execute("INSERT INTO results (received_at, device_id, tool, result) VALUES (1, 'D', 'memtest', 'PASS')")
+    db.commit()
+    db.close()
+    store = ResultStore(path)
+    assert store.query()[0]["flash_model"] == ""
+    store.add_from_message({"tool": "h2wflashtool", "result": "PASS"}, "D", flash_model="M")
+    assert store.query(text="M")[0]["flash_model"] == "M"
+    store.close()
